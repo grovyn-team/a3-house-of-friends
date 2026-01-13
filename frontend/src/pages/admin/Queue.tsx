@@ -9,6 +9,7 @@ import { RefreshCw, Users, Gamepad2, UtensilsCrossed, Car, CircleDot, Coffee, Pa
 import { queueAPI } from "@/lib/api";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { useConfirmation } from "@/components/ui/confirmation-dialog";
 
 type FilterType = ServiceType | 'all';
 type TabType = 'all' | 'bookings' | 'orders';
@@ -33,6 +34,7 @@ const getServiceIcon = (serviceId: ServiceType | string): React.ReactElement => 
 
 export default function AdminQueue() {
   const { toast } = useToast();
+  const { confirm, ConfirmationDialog } = useConfirmation();
   const [activeTab, setActiveTab] = useState<TabType>('all');
   const [activeFilter, setActiveFilter] = useState<FilterType>('all');
   const [allQueue, setAllQueue] = useState<any[]>([]);
@@ -89,11 +91,21 @@ export default function AdminQueue() {
       loadQueue();
     });
 
+    const cleanupPendingApproval = on('pending_approval', () => {
+      loadQueue();
+    });
+
+    const cleanupApprovalProcessed = on('approval_processed', () => {
+      loadQueue();
+    });
+
     return () => {
       cleanupBooking();
       cleanupOrder();
       cleanupPayment();
       cleanupQueueUpdate();
+      cleanupPendingApproval();
+      cleanupApprovalProcessed();
     };
   }, [isConnected, on, loadQueue]);
 
@@ -139,15 +151,24 @@ export default function AdminQueue() {
 
   const handleAssign = async (entry: any) => {
     try {
-      await queueAPI.assign(entry.id, entry.type);
-      toast({
-        title: "Customer Assigned",
-        description: entry.type === 'reservation' 
-          ? "Reservation confirmed and session started."
-          : entry.type === 'order'
-          ? "Order confirmed."
-          : "Session activated.",
-      });
+      // For pending_approval reservations, use approval endpoint
+      if (entry.type === 'reservation' && entry.reservationStatus === 'pending_approval') {
+        await queueAPI.approveCashPayment(entry.id);
+        toast({
+          title: "Payment Approved",
+          description: "Cash payment approved and session started.",
+        });
+      } else {
+        await queueAPI.assign(entry.id, entry.type);
+        toast({
+          title: "Customer Assigned",
+          description: entry.type === 'reservation' 
+            ? "Reservation confirmed and session started."
+            : entry.type === 'order'
+            ? "Order confirmed."
+            : "Session activated.",
+        });
+      }
       // Reload queue to reflect changes
       loadQueue();
     } catch (error: any) {
@@ -160,30 +181,36 @@ export default function AdminQueue() {
   };
 
   const handleRemove = async (entry: any) => {
-    if (!confirm(`Are you sure you want to remove ${entry.name} from the queue?`)) {
-      return;
-    }
-
-    try {
-      await queueAPI.remove(entry.id, entry.type);
-      toast({
-        title: "Removed from Queue",
-        description: entry.type === 'reservation'
-          ? "Reservation cancelled."
-          : entry.type === 'order'
-          ? "Order cancelled."
-          : "Session ended.",
-        variant: "destructive",
-      });
-      // Reload queue to reflect changes
-      loadQueue();
-    } catch (error: any) {
-      toast({
-        title: "Removal Failed",
-        description: error.message || "Could not remove from queue.",
-        variant: "destructive",
-      });
-    }
+    confirm({
+      title: "Remove from Queue?",
+      description: `Are you sure you want to remove ${entry.name} from the queue?`,
+      variant: "destructive",
+      confirmText: "Remove",
+      cancelText: "Cancel",
+      onConfirm: async () => {
+        try {
+          await queueAPI.remove(entry.id, entry.type);
+          toast({
+            title: "Removed from Queue",
+            description: entry.type === 'reservation'
+              ? "Reservation cancelled."
+              : entry.type === 'order'
+              ? "Order cancelled."
+              : "Session ended.",
+            variant: "destructive",
+          });
+          // Reload queue to reflect changes
+          loadQueue();
+        } catch (error: any) {
+          toast({
+            title: "Removal Failed",
+            description: error.message || "Could not remove from queue.",
+            variant: "destructive",
+          });
+          throw error; // Re-throw to prevent dialog from closing
+        }
+      },
+    });
   };
 
   return (
@@ -302,6 +329,7 @@ export default function AdminQueue() {
         </TabsContent>
       </Tabs>
 
+      <ConfirmationDialog />
     </AdminLayout>
   );
 }

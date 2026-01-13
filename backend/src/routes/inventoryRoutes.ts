@@ -5,6 +5,7 @@ import {
   createCategory,
   updateCategory,
   deleteCategory,
+  getInventoryStats,
   getAllInventoryItems,
   getInventoryItemById,
   createInventoryItem,
@@ -37,6 +38,7 @@ router.post('/categories', requireAdmin, createCategory);
 router.put('/categories/:id', requireAdmin, updateCategory);
 router.delete('/categories/:id', requireAdmin, deleteCategory);
 
+router.get('/stats', getInventoryStats);
 router.get('/items', getAllInventoryItems);
 router.get('/items/:id', getInventoryItemById);
 router.post('/items', requireAdmin, createInventoryItem);

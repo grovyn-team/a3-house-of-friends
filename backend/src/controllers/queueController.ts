@@ -14,11 +14,22 @@ export const getQueue = async (
     const { service } = req.query;
 
     const pendingReservations = await ReservationModel.find({
-      status: 'pending_payment',
+      status: { $in: ['pending_payment', 'pending_approval', 'payment_confirmed'] },
     })
       .populate('activityId')
       .populate('unitId')
       .sort({ createdAt: 1 });
+    
+    const reservationsWithoutActiveSessions = [];
+    for (const reservation of pendingReservations) {
+      const activeSession = await SessionModel.findOne({
+        reservationId: reservation._id,
+        status: { $in: ['active', 'scheduled'] },
+      });
+      if (!activeSession || reservation.status === 'pending_approval') {
+        reservationsWithoutActiveSessions.push(reservation);
+      }
+    }
 
     const activeSessions = await SessionModel.find({
       status: { $in: ['scheduled', 'active'] },
@@ -33,13 +44,17 @@ export const getQueue = async (
     })
       .sort({ createdAt: 1 });
 
-    // Map reservations to queue entries
-    const reservationQueue = pendingReservations.map((reservation, index) => {
+    const reservationQueue = reservationsWithoutActiveSessions.map((reservation, index) => {
       const activity = reservation.activityId as any;
       const unit = reservation.unitId as any;
       
-      // Map activity type to service type
       const serviceType = mapActivityTypeToServiceType(activity?.type || '');
+      
+      const queueStatus = reservation.status === 'pending_approval' 
+        ? ('pending' as const) 
+        : reservation.status === 'payment_confirmed'
+        ? ('waiting' as const)
+        : ('waiting' as const);
       
       return {
         id: reservation._id.toString(),
@@ -47,17 +62,20 @@ export const getQueue = async (
         phone: reservation.customerPhone,
         service: serviceType,
         joinedAt: reservation.createdAt,
-        status: 'waiting' as const,
+        status: queueStatus,
         position: index + 1,
         type: 'reservation',
         activityName: activity?.name || 'Unknown Activity',
         unitName: unit?.name || 'Unknown Unit',
         amount: reservation.amount,
         expiresAt: reservation.expiresAt,
+        reservationStatus: reservation.status,
+        reservationId: reservation._id.toString(),
+        paymentStatus: reservation.status === 'pending_approval' ? 'offline' : 
+                      reservation.status === 'payment_confirmed' ? 'paid' : 'pending',
       };
     });
 
-    // Map active sessions to queue entries (showing as "serving")
     const sessionQueue = activeSessions.map((session, index) => {
       const activity = session.activityId as any;
       const unit = session.unitId as any;
@@ -82,10 +100,7 @@ export const getQueue = async (
       };
     });
 
-    // Map orders to queue entries
     const orderQueue = pendingOrders.map((order, index) => {
-      // Map order status to queue status
-      // pending -> waiting, preparing/ready -> next
       const queueStatus = (order.status === 'preparing' || order.status === 'ready') 
         ? ('next' as const) 
         : ('waiting' as const);
@@ -102,20 +117,17 @@ export const getQueue = async (
         itemCount: order.items?.length || 0,
         amount: order.totalAmount || order.amount || 0,
         items: order.items || [],
-        orderStatus: order.status, // Include actual order status for UI
+        orderStatus: order.status,
         paymentStatus: order.paymentStatus,
       };
     });
 
-    // Combine all queue entries
     let allQueue = [...reservationQueue, ...sessionQueue, ...orderQueue];
 
-    // Filter by service if specified
     if (service && service !== 'all') {
       allQueue = allQueue.filter(entry => entry.service === service);
     }
 
-    // Recalculate positions after filtering
     allQueue = allQueue.map((entry, index) => ({
       ...entry,
       position: index + 1,
@@ -126,6 +138,7 @@ export const getQueue = async (
       stats: {
         total: allQueue.length,
         waiting: allQueue.filter(e => e.status === 'waiting').length,
+        pending: allQueue.filter(e => e.status === 'pending').length,
         next: allQueue.filter(e => e.status === 'next').length,
         serving: allQueue.filter(e => e.status === 'serving').length,
         byService: {
@@ -167,7 +180,6 @@ export const getStations = async (
       }
     });
 
-    // Map units to stations
     const stations = units
       .filter(unit => {
         if (!type || type === 'all') return true;
@@ -275,25 +287,64 @@ export const assignQueueEntry = async (
         throw new AppError('Reservation not found', 404);
       }
 
-      if (reservation.status !== 'pending_payment') {
-        throw new AppError('Reservation is not in pending payment status', 400);
+      if (reservation.status !== 'pending_payment' && reservation.status !== 'pending_approval' && reservation.status !== 'payment_confirmed') {
+        throw new AppError('Reservation is not in a valid state for assignment', 400);
       }
 
+      const existingSession = await SessionModel.findOne({
+        reservationId: reservation._id,
+        status: { $in: ['active', 'scheduled'] },
+      });
+
+      if (existingSession) {
+        throw new AppError('Session is already active for this reservation', 400);
+      }
+
+      let activity: any;
+      let activityId: any;
+      let activityType: string;
+      
+      const populatedActivity = reservation.activityId as any;
+      if (populatedActivity && populatedActivity._id) {
+        activityId = populatedActivity._id;
+        activityType = populatedActivity.type;
+        if (!activityType) {
+          activity = await ActivityModel.findById(activityId);
+          if (!activity) {
+            throw new AppError('Activity not found', 404);
+          }
+          activityType = activity.type;
+        } else {
+          activity = populatedActivity;
+        }
+      } else {
+        activityId = reservation.activityId;
+        activity = await ActivityModel.findById(activityId);
+        if (!activity) {
+          throw new AppError('Activity not found', 404);
+        }
+        activityType = activity.type;
+      }
+
+      if (!activityType) {
+        throw new AppError('Activity type is required', 400);
+      }
+      
+      const unit = reservation.unitId as any;
+      const unitId = unit._id || unit;
+
+      reservation.activityId = activityId;
+      reservation.unitId = unitId;
       reservation.status = 'payment_confirmed';
       reservation.paymentId = 'admin_assigned';
       reservation.confirmedAt = new Date();
       await reservation.save();
 
-      const activity = reservation.activityId as any;
-      if (!activity) {
-        throw new AppError('Activity not found', 404);
-      }
-
       const session = await SessionModel.create({
         reservationId: reservation._id,
-        activityId: reservation.activityId,
-        activityType: activity.type,
-        unitId: reservation.unitId,
+        activityId: activityId,
+        activityType: activityType,
+        unitId: unitId,
         startTime: new Date(),
         endTime: new Date(Date.now() + reservation.durationMinutes * 60 * 1000),
         durationMinutes: reservation.durationMinutes,
@@ -308,7 +359,7 @@ export const assignQueueEntry = async (
         paymentStatus: 'offline',
       });
 
-      await ActivityUnitModel.findByIdAndUpdate(reservation.unitId, {
+      await ActivityUnitModel.findByIdAndUpdate(unitId, {
         status: 'occupied',
       });
 
@@ -346,7 +397,6 @@ export const assignQueueEntry = async (
       io.of('/admin').emit('queue_updated', { action: 'assigned', entryId: targetId, type });
 
     } else if (type === 'order') {
-      // Confirm order - change status to 'preparing'
       const order = await FoodOrderModel.findById(targetId);
 
       if (!order) {
@@ -378,7 +428,6 @@ export const assignQueueEntry = async (
         orderStatus: order.status,
       };
 
-      // Broadcast to WebSocket - notify specific customer
       const { getIO, notifyCustomerByPhone, notifyCustomerById } = await import('../websocket/server.js');
       const io = getIO();
       
@@ -388,7 +437,6 @@ export const assignQueueEntry = async (
         ? 'Your order is ready for pickup!'
         : 'Your order has been served!';
       
-      // Notify by phone and by order ID
       notifyCustomerByPhone(order.customerPhone, 'order_status_update', {
         type: 'order',
         orderId: order._id.toString(),
@@ -408,7 +456,6 @@ export const assignQueueEntry = async (
       io.of('/admin').emit('queue_updated', { action: 'assigned', entryId: targetId, type });
 
     } else if (type === 'session') {
-      // Activate scheduled session
       const session = await SessionModel.findById(targetId);
 
       if (!session) {
@@ -482,7 +529,6 @@ export const removeQueueEntry = async (
     let result: any = {};
 
     if (type === 'reservation') {
-      // Cancel reservation
       const reservation = await ReservationModel.findById(targetId);
 
       if (!reservation) {
@@ -531,7 +577,6 @@ export const removeQueueEntry = async (
       io.of('/admin').emit('queue_updated', { action: 'removed', entryId: targetId, type });
 
     } else if (type === 'order') {
-      // Cancel order
       const order = await FoodOrderModel.findById(targetId);
 
       if (!order) {
@@ -548,11 +593,9 @@ export const removeQueueEntry = async (
         message: 'Order cancelled',
       };
 
-      // Broadcast to WebSocket - notify specific customer
       const { getIO, notifyCustomerByPhone, notifyCustomerById } = await import('../websocket/server.js');
       const io = getIO();
       
-      // Notify by phone and by order ID
       notifyCustomerByPhone(order.customerPhone, 'order_status_update', {
         type: 'order',
         orderId: order._id.toString(),
@@ -572,7 +615,6 @@ export const removeQueueEntry = async (
       io.of('/admin').emit('queue_updated', { action: 'removed', entryId: targetId, type });
 
     } else if (type === 'session') {
-      // End session
       const session = await SessionModel.findById(targetId);
 
       if (!session) {
@@ -626,9 +668,6 @@ export const removeQueueEntry = async (
   }
 };
 
-/**
- * Helper function to map activity type to legacy service type
- */
 function mapActivityTypeToServiceType(activityType: string): 'playstation' | 'snooker' | 'racing' | 'general' {
   if (activityType.includes('playstation')) return 'playstation';
   if (activityType.includes('snooker')) return 'snooker';

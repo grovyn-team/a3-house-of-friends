@@ -167,8 +167,8 @@ export const confirmReservation = async (
       throw new AppError('Reservation not found', 404);
     }
 
-    if (reservation.status !== 'pending_payment') {
-      throw new AppError('Reservation is not in pending payment status', 400);
+    if (reservation.status !== 'pending_payment' && reservation.status !== 'pending_approval') {
+      throw new AppError('Reservation is not in pending payment or pending approval status', 400);
     }
 
     // Update reservation
@@ -178,7 +178,9 @@ export const confirmReservation = async (
     await reservation.save();
 
     // Get activity to get activityType
-    const activity = await ActivityModel.findById(reservation.activityId);
+    // Extract activityId - handle both ObjectId and populated object
+    const activityIdForLookup = (reservation.activityId as any)?._id || reservation.activityId;
+    const activity = await ActivityModel.findById(activityIdForLookup);
     if (!activity) {
       throw new AppError('Activity not found', 404);
     }
@@ -186,7 +188,7 @@ export const confirmReservation = async (
     // Create session from reservation
     const session = await SessionModel.create({
       reservationId: reservation._id,
-      activityId: reservation.activityId,
+      activityId: activity._id,
       activityType: activity.type,
       unitId: reservation.unitId,
       startTime: reservation.startTime,
@@ -249,6 +251,10 @@ export const getReservation = async (
       amount: reservation.amount,
       status: reservation.status,
       expiresAt: reservation.expiresAt,
+      customerName: reservation.customerName,
+      customerPhone: reservation.customerPhone,
+      paymentId: reservation.paymentId,
+      confirmedAt: reservation.confirmedAt,
     });
   } catch (error) {
     next(error);

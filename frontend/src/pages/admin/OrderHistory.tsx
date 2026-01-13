@@ -79,7 +79,7 @@ export default function OrderHistory() {
         return <Badge className="bg-success/20 text-success border-success/30"><CheckCircle className="w-3 h-3 mr-1" /> Ready</Badge>;
       case 'served':
       case 'completed':
-        return <Badge className="bg-success/20 text-success border-success/30"><CheckCircle className="w-3 h-3 mr-1" /> Completed</Badge>;
+        return <Badge className="bg-success/20 text-success border-success/30 hover:bg-success/20 hover:text-success"><CheckCircle className="w-3 h-3 mr-1" /> Completed</Badge>;
       case 'cancelled':
         return <Badge className="bg-destructive/20 text-destructive border-destructive/30"><XCircle className="w-3 h-3 mr-1" /> Cancelled</Badge>;
       default:
@@ -91,7 +91,7 @@ export default function OrderHistory() {
     switch (status) {
       case 'paid':
       case 'offline':
-        return <Badge className="bg-success/20 text-success border-success/30">Paid</Badge>;
+        return <Badge className="bg-success/20 text-success border-success/30 hover:bg-success/20 hover:text-success">Paid</Badge>;
       case 'pending':
         return <Badge className="bg-warning/20 text-warning border-warning/30">Pending</Badge>;
       case 'failed':
@@ -126,17 +126,17 @@ export default function OrderHistory() {
 
   return (
     <AdminLayout>
-      <div className="space-y-6">
-        <div className="flex items-center justify-between flex-wrap gap-4">
+      <div className="space-y-6 -mx-4 md:-mx-6">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 px-4 md:px-6">
           <div>
-            <h1 className="text-3xl font-bold text-foreground">Order History</h1>
-            <p className="text-muted-foreground mt-1">
+            <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Order History</h1>
+            <p className="text-muted-foreground mt-1 text-sm sm:text-base">
               View all food and beverage orders
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 w-full sm:w-auto">
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="w-full sm:w-[180px]">
                 <Filter className="w-4 h-4 mr-2" />
                 <SelectValue placeholder="Filter by status" />
               </SelectTrigger>
@@ -169,8 +169,8 @@ export default function OrderHistory() {
           </Card>
         ) : (
           <>
-            <div className="w-full max-w-4xl mx-auto">
-              <div className="grid gap-4 w-full">
+            <div className="w-full">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
                 {orders.map((order, index) => (
                   <motion.div
                     key={order.id}
@@ -179,44 +179,46 @@ export default function OrderHistory() {
                     transition={{ delay: index * 0.05 }}
                     className="w-full"
                   >
-                    <Card className="glass border-primary/20 hover:border-primary/30 transition-all w-full">
-                    <CardHeader>
-                      <div className="flex items-start justify-between flex-wrap gap-4">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-2">
-                            <CardTitle className="text-lg">{order.customerName}</CardTitle>
-                            {getStatusBadge(order.status)}
-                            {getPaymentStatusBadge(order.paymentStatus)}
-                          </div>
-                          <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
-                            <div className="flex items-center gap-1">
-                              <Phone className="w-4 h-4" />
-                              {order.customerPhone}
+                    <Card className="glass border-primary/20 hover:border-primary/30 transition-all w-full h-full flex flex-col">
+                    <CardHeader className="pb-3">
+                      <div className="flex flex-col gap-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1 min-w-0">
+                            <CardTitle className="text-lg mb-2 truncate">{order.customerName}</CardTitle>
+                            <div className="flex items-center gap-2 flex-wrap mb-2">
+                              {getStatusBadge(order.status)}
+                              {getPaymentStatusBadge(order.paymentStatus)}
                             </div>
-                            <div className="flex items-center gap-1">
-                              <Calendar className="w-4 h-4" />
-                              {formatDate(order.createdAt)}
+                            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-sm text-muted-foreground">
+                              <div className="flex items-center gap-1">
+                                <Phone className="w-4 h-4 flex-shrink-0" />
+                                <span className="truncate">{order.customerPhone}</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <Calendar className="w-4 h-4 flex-shrink-0" />
+                                <span className="truncate">{formatDate(order.createdAt)}</span>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-2xl font-bold text-primary">
-                            {formatCurrency(order.totalAmount || 0)}
-                          </p>
+                          <div className="flex-shrink-0">
+                            <p className="text-xl sm:text-2xl font-bold text-primary">
+                              {formatCurrency(order.totalAmount || 0)}
+                            </p>
+                          </div>
                         </div>
                       </div>
                     </CardHeader>
-                    <CardContent>
-                      <div className="space-y-3">
+                    <CardContent className="pt-0 flex-1 flex flex-col">
+                      <div className="space-y-3 flex-1">
                         <div className="bg-secondary/30 rounded-lg p-3">
                           <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Order Items</p>
-                          <div className="space-y-1">
+                          <div className="space-y-1.5">
                             {order.items?.map((item: any, idx: number) => (
-                              <div key={idx} className="flex items-center justify-between text-sm">
-                                <span className="text-foreground">
+                              <div key={idx} className="flex items-center justify-between text-sm gap-2">
+                                <span className="text-foreground truncate">
                                   {item.quantity}x {item.name}
                                 </span>
-                                <span className="font-medium text-foreground">
+                                <span className="font-medium text-foreground flex-shrink-0">
                                   {formatCurrency((item.price || 0) * (item.quantity || 1))}
                                 </span>
                               </div>
@@ -224,16 +226,16 @@ export default function OrderHistory() {
                           </div>
                         </div>
 
-                        <div className="grid md:grid-cols-2 gap-4">
+                        <div className="grid grid-cols-2 gap-3 mt-auto">
                           <div className="bg-secondary/30 rounded-lg p-3">
                             <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Total Items</p>
-                            <p className="font-semibold text-foreground">
+                            <p className="font-semibold text-foreground text-sm">
                               {order.items?.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0) || 0} items
                             </p>
                           </div>
                           <div className="bg-secondary/30 rounded-lg p-3">
                             <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Order ID</p>
-                            <p className="font-semibold text-foreground text-sm font-mono">
+                            <p className="font-semibold text-foreground text-xs font-mono break-all">
                               {order.id.slice(-8)}
                             </p>
                           </div>
@@ -248,8 +250,8 @@ export default function OrderHistory() {
 
             {/* Pagination */}
             {totalPages > 1 && (
-              <div className="flex items-center justify-between">
-                <p className="text-sm text-muted-foreground">
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-4 md:px-6">
+                <p className="text-sm text-muted-foreground text-center sm:text-left">
                   Showing {offset + 1} to {Math.min(offset + limit, total)} of {total} orders
                 </p>
                 <div className="flex items-center gap-2">
@@ -260,9 +262,9 @@ export default function OrderHistory() {
                     disabled={offset === 0 || loading}
                   >
                     <ChevronLeft className="w-4 h-4" />
-                    Previous
+                    <span className="hidden sm:inline">Previous</span>
                   </Button>
-                  <span className="text-sm text-muted-foreground">
+                  <span className="text-sm text-muted-foreground px-2">
                     Page {currentPage} of {totalPages}
                   </span>
                   <Button
@@ -271,7 +273,7 @@ export default function OrderHistory() {
                     onClick={() => setOffset(Math.min(total - limit, offset + limit))}
                     disabled={offset + limit >= total || loading}
                   >
-                    Next
+                    <span className="hidden sm:inline">Next</span>
                     <ChevronRight className="w-4 h-4" />
                   </Button>
                 </div>

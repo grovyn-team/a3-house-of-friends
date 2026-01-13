@@ -157,6 +157,12 @@ export const sessionsAPI = {
       body: JSON.stringify({ winnerName, selectedBy }),
     });
   },
+
+  delete: async (id: string) => {
+    return apiRequest<any>(`/sessions/${id}`, {
+      method: 'DELETE',
+    });
+  },
 };
 
 export const ordersAPI = {
@@ -211,6 +217,56 @@ export const queueAPI = {
   getStats: async () => {
     return apiRequest<any>('/queue/stats');
   },
+
+  // Approval methods
+  getPendingApprovals: async () => {
+    return apiRequest<any[]>('/queue/approvals');
+  },
+
+  approveCashPayment: async (reservationId: string, unitId?: string) => {
+    return apiRequest<any>('/queue/approve', {
+      method: 'POST',
+      body: JSON.stringify({ reservationId, unitId }),
+    });
+  },
+
+  rejectCashPayment: async (reservationId: string) => {
+    return apiRequest<any>('/queue/reject', {
+      method: 'POST',
+      body: JSON.stringify({ reservationId }),
+    });
+  },
+
+  // Waiting queue methods
+  getWaitingQueue: async (activityId?: string) => {
+    const query = activityId ? `?activityId=${activityId}` : '';
+    return apiRequest<any[]>(`/queue/waiting${query}`);
+  },
+
+  processQueue: async (activityId: string) => {
+    return apiRequest<any>('/queue/process', {
+      method: 'POST',
+      body: JSON.stringify({ activityId }),
+    });
+  },
+
+  getQueueStatus: async (reservationId: string) => {
+    return apiRequest<any>(`/queue/status/${reservationId}`);
+  },
+
+  assign: async (entryId: string, type: 'reservation' | 'order' | 'session') => {
+    return apiRequest<any>('/queue/assign', {
+      method: 'POST',
+      body: JSON.stringify({ entryId, type }),
+    });
+  },
+
+  remove: async (entryId: string, type: 'reservation' | 'order' | 'session') => {
+    return apiRequest<any>('/queue/remove', {
+      method: 'POST',
+      body: JSON.stringify({ entryId, type }),
+    });
+  },
 };
 
 export const revenueAPI = {
@@ -254,20 +310,6 @@ export const revenueAPI = {
     a.click();
     window.URL.revokeObjectURL(url);
     document.body.removeChild(a);
-  },
-
-  assign: async (entryId: string, type: 'reservation' | 'order' | 'session') => {
-    return apiRequest<any>('/queue/assign', {
-      method: 'POST',
-      body: JSON.stringify({ entryId, type }),
-    });
-  },
-
-  remove: async (entryId: string, type: 'reservation' | 'order' | 'session') => {
-    return apiRequest<any>('/queue/remove', {
-      method: 'POST',
-      body: JSON.stringify({ entryId, type }),
-    });
   },
 };
 
@@ -335,7 +377,26 @@ export const inventoryAPI = {
       method: 'DELETE',
     });
   },
-
+  getStats: async (params?: {
+    categoryId?: string;
+    type?: string;
+    status?: string;
+    search?: string;
+  }) => {
+    const queryParams = new URLSearchParams();
+    if (params?.categoryId) queryParams.append('categoryId', params.categoryId);
+    if (params?.type) queryParams.append('type', params.type);
+    if (params?.status) queryParams.append('status', params.status);
+    if (params?.search) queryParams.append('search', params.search);
+    
+    const query = queryParams.toString();
+    return apiRequest<{
+      totalItems: number;
+      equipment: number;
+      consumables: number;
+      lowStock: number;
+    }>(`/inventory/stats${query ? `?${query}` : ''}`);
+  },
   getItems: async (params?: {
     categoryId?: string;
     type?: string;

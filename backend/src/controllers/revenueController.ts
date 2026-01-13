@@ -12,32 +12,25 @@ export const exportRevenueData = async (
   try {
     const { startDate, endDate } = req.query;
     
-    let start = new Date();
-    let end = new Date();
-    
-    if (startDate) {
-      start = new Date(startDate as string);
-      start.setHours(0, 0, 0, 0);
-    } else {
-      start.setHours(0, 0, 0, 0);
-    }
-    
-    if (endDate) {
-      end = new Date(endDate as string);
-      end.setHours(23, 59, 59, 999);
-    } else {
-      end.setHours(23, 59, 59, 999);
-    }
-
     const sessionQuery: any = {
-      createdAt: { $gte: start, $lte: end },
       paymentStatus: { $in: ['paid', 'offline'] },
     };
 
     const orderQuery: any = {
-      createdAt: { $gte: start, $lte: end },
       paymentStatus: { $in: ['paid', 'offline'] },
     };
+
+    // Only apply date filters if both dates are provided
+    if (startDate && endDate) {
+      let start = new Date(startDate as string);
+      start.setHours(0, 0, 0, 0);
+      
+      let end = new Date(endDate as string);
+      end.setHours(23, 59, 59, 999);
+      
+      sessionQuery.createdAt = { $gte: start, $lte: end };
+      orderQuery.createdAt = { $gte: start, $lte: end };
+    }
 
     const pageSize = 100;
     let allSessions: any[] = [];
@@ -138,32 +131,25 @@ export const getRevenueData = async (
   try {
     const { startDate, endDate, page = '1', limit = '50' } = req.query;
     
-    let start = new Date();
-    let end = new Date();
-    
-    if (startDate) {
-      start = new Date(startDate as string);
-      start.setHours(0, 0, 0, 0);
-    } else {
-      start.setHours(0, 0, 0, 0);
-    }
-    
-    if (endDate) {
-      end = new Date(endDate as string);
-      end.setHours(23, 59, 59, 999);
-    } else {
-      end.setHours(23, 59, 59, 999);
-    }
-
     const sessionQuery: any = {
-      createdAt: { $gte: start, $lte: end },
       paymentStatus: { $in: ['paid', 'offline'] },
     };
 
     const orderQuery: any = {
-      createdAt: { $gte: start, $lte: end },
       paymentStatus: { $in: ['paid', 'offline'] },
     };
+
+    // Only apply date filters if both dates are provided
+    if (startDate && endDate) {
+      let start = new Date(startDate as string);
+      start.setHours(0, 0, 0, 0);
+      
+      let end = new Date(endDate as string);
+      end.setHours(23, 59, 59, 999);
+      
+      sessionQuery.createdAt = { $gte: start, $lte: end };
+      orderQuery.createdAt = { $gte: start, $lte: end };
+    }
 
     const pageNum = parseInt(page as string, 10);
     const limitNum = parseInt(limit as string, 10);

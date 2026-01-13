@@ -13,9 +13,11 @@ import { activitiesAPI, inventoryAPI } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Edit, Trash2, Package, Settings, Link as LinkIcon } from "lucide-react";
 import { formatCurrency } from "@/lib/types";
+import { useConfirmation } from "@/components/ui/confirmation-dialog";
 
 export default function Services() {
   const { toast } = useToast();
+  const { confirm, ConfirmationDialog } = useConfirmation();
   const [activities, setActivities] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isServiceDialogOpen, setIsServiceDialogOpen] = useState(false);
@@ -137,33 +139,41 @@ export default function Services() {
   };
 
   const handleDeleteInstance = async (instanceId: string) => {
-    if (!confirm("Are you sure you want to delete this instance?")) return;
-    
-    try {
-      const response = await fetch(
-        `${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/activities/units/${instanceId}`,
-        {
-          method: 'DELETE',
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
-          },
+    confirm({
+      title: "Delete Instance?",
+      description: "Are you sure you want to delete this instance? This action cannot be undone.",
+      variant: "destructive",
+      confirmText: "Delete",
+      cancelText: "Cancel",
+      onConfirm: async () => {
+        try {
+          const response = await fetch(
+            `${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/activities/units/${instanceId}`,
+            {
+              method: 'DELETE',
+              headers: {
+                'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+              },
+            }
+          );
+          
+          if (!response.ok) throw new Error('Failed to delete instance');
+          
+          toast({
+            title: "Success",
+            description: "Service instance deleted successfully.",
+          });
+          loadData();
+        } catch (error: any) {
+          toast({
+            title: "Error",
+            description: error.message || "Failed to delete instance.",
+            variant: "destructive",
+          });
+          throw error;
         }
-      );
-      
-      if (!response.ok) throw new Error('Failed to delete instance');
-      
-      toast({
-        title: "Success",
-        description: "Service instance deleted successfully.",
-      });
-      loadData();
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to delete instance.",
-        variant: "destructive",
-      });
-    }
+      },
+    });
   };
 
   return (
@@ -347,6 +357,7 @@ export default function Services() {
           </DialogContent>
         </Dialog>
       </div>
+      <ConfirmationDialog />
     </AdminLayout>
   );
 }

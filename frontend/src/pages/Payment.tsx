@@ -35,7 +35,6 @@ export default function Payment(props?: PaymentProps) {
   const { addBooking, updateBooking } = useBookingHistory();
   const { emit, on, joinRoom, isConnected } = useWebSocket({ namespace: 'customer' });
 
-  // Support both component props and location state
   const sessionId = props?.sessionId || location.state?.sessionId as string | undefined;
   const orderId = props?.orderId || location.state?.orderId as string | undefined;
   const reservationId = props?.reservationId || location.state?.reservationId as string | undefined;
@@ -48,17 +47,17 @@ export default function Payment(props?: PaymentProps) {
   const customerName = props?.customerName || bookingRequest?.customerName || session?.customerName;
   const customerPhone = props?.customerPhone || bookingRequest?.customerPhone || session?.customerPhone;
   const qrContext = props?.qrContext || location.state?.qrContext as QRContext | undefined;
+  const duration = bookingRequest?.duration || session?.durationMinutes || session?.duration;
 
   const [paymentMode, setPaymentMode] = useState<'online' | 'cash' | null>(null);
+  const [selectedPaymentMode, setSelectedPaymentMode] = useState<'online' | 'cash' | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<'upi' | 'card' | 'wallet' | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState<'idle' | 'processing' | 'success' | 'failed'>('idle');
 
   useEffect(() => {
-    // For challenge sessions, amount might come from session object
     const finalAmount = amount || session?.finalAmount || session?.amount;
     if ((!sessionId && !orderId && !reservationId) || !finalAmount) {
-      // Allow challenge sessions without explicit amount (it comes from session)
       if (!isChallengeSession) {
         toast({
           title: 'Invalid Request',
@@ -71,7 +70,6 @@ export default function Payment(props?: PaymentProps) {
   }, [sessionId, orderId, reservationId, amount, session, isChallengeSession, navigate, toast]);
 
   useEffect(() => {
-    // Load Razorpay script
     const script = document.createElement('script');
     script.src = 'https://checkout.razorpay.com/v1/checkout.js';
     script.async = true;
@@ -82,17 +80,14 @@ export default function Payment(props?: PaymentProps) {
     };
   }, []);
 
-  // Register customer and listen for status updates
   useEffect(() => {
     if (!isConnected || !customerPhone) return;
 
-    // Register customer phone
     const normalizedPhone = customerPhone.replace(/\D/g, '');
     if (normalizedPhone.length >= 10) {
       emit('register_customer', { phone: normalizedPhone });
     }
 
-    // Join relevant rooms
     if (reservationId) {
       joinRoom(`reservation:${reservationId}`);
     }
@@ -103,7 +98,6 @@ export default function Payment(props?: PaymentProps) {
       joinRoom(`session:${sessionId}`);
     }
 
-    // Listen for booking status updates
     const cleanupBooking = on('booking_status_update', (data: any) => {
       if ((reservationId && data.reservationId === reservationId) || 
           (sessionId && data.sessionId === sessionId)) {
@@ -115,7 +109,6 @@ export default function Payment(props?: PaymentProps) {
       }
     });
 
-    // Listen for order status updates
     const cleanupOrder = on('order_status_update', (data: any) => {
       if (orderId && data.orderId === orderId) {
         toast({
@@ -129,7 +122,6 @@ export default function Payment(props?: PaymentProps) {
       }
     });
 
-    // Listen for session status updates
     const cleanupSession = on('session_status_update', (data: any) => {
       if (sessionId && (data.sessionId === sessionId || data.session_id === sessionId)) {
         toast({
@@ -147,7 +139,6 @@ export default function Payment(props?: PaymentProps) {
     };
   }, [isConnected, customerPhone, reservationId, orderId, sessionId, emit, joinRoom, on, toast]);
 
-  // Get final amount from session if it's a challenge session
   const finalAmount = amount || session?.finalAmount || session?.amount;
   
   if ((!sessionId && !orderId && !reservationId) || (!finalAmount && !isChallengeSession)) {
@@ -176,7 +167,6 @@ export default function Payment(props?: PaymentProps) {
       if (orderId) {
         const order = await ordersAPI.getById(orderId);
         
-        // Track order in history
         addBooking({
           id: orderId,
           type: 'order',
@@ -188,7 +178,6 @@ export default function Payment(props?: PaymentProps) {
           orderId: orderId,
         });
 
-        // Emit payment event to admin
         emit('payment_completed', {
           type: 'order',
           orderId,
@@ -207,18 +196,37 @@ export default function Payment(props?: PaymentProps) {
           });
         }, 1500);
       } else if (reservationId) {
-        // markOfflinePayment already confirms reservation and creates session
-        // Get session from response
+        if (response.requiresApproval) {
+          addBooking({
+            id: reservationId,
+            type: 'reservation',
+            customerName: customerName || 'Customer',
+            customerPhone: customerPhone || '',
+            amount: amount || 0,
+            status: 'pending_approval',
+            createdAt: new Date().toISOString(),
+            reservationId: reservationId,
+            activityId: activity?.type || activity?.id,
+            durationMinutes: duration || 0,
+          });
+          
+          toast({
+            title: 'Payment Recorded',
+            description: 'Your cash payment has been recorded. Waiting for admin approval to assign system.',
+          });
+          setTimeout(() => {
+            navigate('/my-bookings');
+          }, 2000);
+          return;
+        }
         if (response.sessionId) {
           const session = await sessionsAPI.getById(response.sessionId);
           
-          // Update booking in history
           updateBooking(reservationId, {
             sessionId: response.sessionId,
             status: 'active',
           });
 
-          // Emit payment event to admin
           emit('payment_completed', {
             type: 'reservation',
             reservationId,
@@ -304,12 +312,12 @@ export default function Payment(props?: PaymentProps) {
         amount: paymentOrder.amount,
         currency: paymentOrder.currency,
         order_id: paymentOrder.orderId,
-        name: 'a3houseoffriends',
+        name: 'A3 House of Friends',
         description,
         handler: async (response: any) => {
           try {
             // Verify payment
-            await paymentsAPI.verify({
+            const verifyResult = await paymentsAPI.verify({
               razorpay_order_id: response.razorpay_order_id,
               razorpay_payment_id: response.razorpay_payment_id,
               razorpay_signature: response.razorpay_signature,
@@ -332,9 +340,58 @@ export default function Payment(props?: PaymentProps) {
                 });
               }, 1500);
             } else if (reservationId) {
-              // Confirm reservation and get session
-              const result = await reservationsAPI.confirm(reservationId, response.razorpay_payment_id);
-              const session = await sessionsAPI.getById(result.sessionId);
+              // Check if user was added to queue (from verifyResult)
+              if (verifyResult.queued) {
+                // User was added to waiting queue
+                addBooking({
+                  id: reservationId,
+                  type: 'reservation',
+                  customerName: customerName || 'Customer',
+                  customerPhone: customerPhone || '',
+                  amount: amount || 0,
+                  status: 'payment_confirmed', // Payment successful but waiting for system
+                  createdAt: new Date().toISOString(),
+                  reservationId: reservationId,
+                  activityId: activity?.type || activity?.id,
+                  durationMinutes: duration || 0,
+                });
+                
+                toast({
+                  title: 'Payment Successful',
+                  description: 'You have been added to the waiting queue. We will notify you when a system becomes available.',
+                });
+                setTimeout(() => {
+                  navigate('/my-bookings');
+                }, 1500);
+                return;
+              }
+              
+              // Unit is available, session should be started
+              // Try to get session from verifyResult or confirm reservation
+              let session;
+              if (verifyResult.sessionId) {
+                session = await sessionsAPI.getById(verifyResult.sessionId);
+              } else {
+                // Fallback: confirm reservation
+                const result = await reservationsAPI.confirm(reservationId, response.razorpay_payment_id);
+                session = await sessionsAPI.getById(result.sessionId);
+              }
+              
+              // Update booking in history
+              addBooking({
+                id: reservationId,
+                type: 'reservation',
+                customerName: customerName || 'Customer',
+                customerPhone: customerPhone || '',
+                amount: amount || session.finalAmount || session.amount || 0,
+                status: 'active',
+                createdAt: new Date().toISOString(),
+                reservationId: reservationId,
+                sessionId: session.id,
+                activityId: activity?.type || activity?.id,
+                durationMinutes: duration || 0,
+              });
+              
               toast({
                 title: 'Payment Successful',
                 description: 'Your session has started.',
@@ -543,17 +600,17 @@ export default function Payment(props?: PaymentProps) {
         </Card>
 
         {/* Payment Mode Selection */}
-        {paymentStatus === 'idle' && !paymentMode && (
+        {paymentStatus === 'idle' && !selectedPaymentMode && (
           <div className="space-y-3">
             <h2 className="text-lg font-semibold text-foreground mb-4">
               Select Payment Mode
             </h2>
 
             <Button
-              variant="outline"
+              variant={paymentMode === 'cash' ? 'default' : 'outline'}
               size="lg"
               className="w-full justify-start h-auto py-4 glass"
-              onClick={handleCashPayment}
+              onClick={() => setPaymentMode('cash')}
               disabled={isProcessing}
             >
               <Banknote className="w-5 h-5 mr-3" />
@@ -563,10 +620,13 @@ export default function Payment(props?: PaymentProps) {
                   Pay at the counter
                 </div>
               </div>
+              {paymentMode === 'cash' && (
+                <CheckCircle className="w-5 h-5 ml-auto" />
+              )}
             </Button>
 
             <Button
-              variant="outline"
+              variant={paymentMode === 'online' ? 'default' : 'outline'}
               size="lg"
               className="w-full justify-start h-auto py-4 glass"
               onClick={() => setPaymentMode('online')}
@@ -579,18 +639,96 @@ export default function Payment(props?: PaymentProps) {
                   Pay via UPI, Card, or Wallet
                 </div>
               </div>
+              {paymentMode === 'online' && (
+                <CheckCircle className="w-5 h-5 ml-auto" />
+              )}
             </Button>
+
+            {/* Continue Button - Only show when payment mode is selected */}
+            {paymentMode && (
+              <Button
+                size="lg"
+                className="w-full mt-6"
+                onClick={() => {
+                  if (paymentMode === 'cash') {
+                    setSelectedPaymentMode('cash');
+                  } else {
+                    setSelectedPaymentMode('online');
+                  }
+                }}
+                disabled={isProcessing}
+              >
+                Continue
+              </Button>
+            )}
           </div>
         )}
 
-        {/* Online Payment Methods */}
-        {paymentStatus === 'idle' && paymentMode === 'online' && (
+        {/* Cash Payment Confirmation */}
+        {paymentStatus === 'idle' && selectedPaymentMode === 'cash' && (
           <div className="space-y-3">
             <div className="flex items-center gap-2 mb-4">
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setPaymentMode(null)}
+                onClick={() => {
+                  setSelectedPaymentMode(null);
+                  setPaymentMode(null);
+                }}
+              >
+                ← Back
+              </Button>
+              <h2 className="text-lg font-semibold text-foreground">
+                Confirm Cash Payment
+              </h2>
+            </div>
+
+            <Card className="glass border-primary/20">
+              <CardContent className="pt-6">
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                      <Banknote className="w-6 h-6 text-primary" />
+                    </div>
+                    <div>
+                      <p className="font-medium text-foreground">Cash Payment Selected</p>
+                      <p className="text-sm text-muted-foreground">
+                        You will pay at the counter after admin approval
+                      </p>
+                    </div>
+                  </div>
+                  <div className="pt-4 border-t">
+                    <p className="text-sm text-muted-foreground mb-2">
+                      After confirmation, your booking will be added to the admin queue with pending approval status. 
+                      The admin will assign a system and start your session timer once approved.
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Button
+              size="lg"
+              className="w-full mt-4"
+              onClick={handleCashPayment}
+              disabled={isProcessing}
+            >
+              {isProcessing ? 'Processing...' : 'Confirm Cash Payment'}
+            </Button>
+          </div>
+        )}
+
+        {/* Online Payment Methods */}
+        {paymentStatus === 'idle' && selectedPaymentMode === 'online' && !paymentMethod && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 mb-4">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setSelectedPaymentMode(null);
+                  setPaymentMode(null);
+                }}
               >
                 ← Back
               </Button>
@@ -600,10 +738,10 @@ export default function Payment(props?: PaymentProps) {
             </div>
 
             <Button
-              variant="outline"
+              variant={paymentMethod === 'upi' ? 'default' : 'outline'}
               size="lg"
               className="w-full justify-start h-auto py-4 glass"
-              onClick={() => handleOnlinePayment('upi')}
+              onClick={() => setPaymentMethod('upi')}
               disabled={isProcessing}
             >
               <Smartphone className="w-5 h-5 mr-3" />
@@ -613,13 +751,16 @@ export default function Payment(props?: PaymentProps) {
                   Pay via UPI apps (GPay, PhonePe, Paytm)
                 </div>
               </div>
+              {paymentMethod === 'upi' && (
+                <CheckCircle className="w-5 h-5 ml-auto" />
+              )}
             </Button>
 
             <Button
-              variant="outline"
+              variant={paymentMethod === 'card' ? 'default' : 'outline'}
               size="lg"
               className="w-full justify-start h-auto py-4 glass"
-              onClick={() => handleOnlinePayment('card')}
+              onClick={() => setPaymentMethod('card')}
               disabled={isProcessing}
             >
               <CreditCard className="w-5 h-5 mr-3" />
@@ -629,13 +770,16 @@ export default function Payment(props?: PaymentProps) {
                   Visa, Mastercard, RuPay
                 </div>
               </div>
+              {paymentMethod === 'card' && (
+                <CheckCircle className="w-5 h-5 ml-auto" />
+              )}
             </Button>
 
             <Button
-              variant="outline"
+              variant={paymentMethod === 'wallet' ? 'default' : 'outline'}
               size="lg"
               className="w-full justify-start h-auto py-4 glass"
-              onClick={() => handleOnlinePayment('wallet')}
+              onClick={() => setPaymentMethod('wallet')}
               disabled={isProcessing}
             >
               <Wallet className="w-5 h-5 mr-3" />
@@ -645,7 +789,22 @@ export default function Payment(props?: PaymentProps) {
                   Paytm, Amazon Pay, etc.
                 </div>
               </div>
+              {paymentMethod === 'wallet' && (
+                <CheckCircle className="w-5 h-5 ml-auto" />
+              )}
             </Button>
+
+            {/* Proceed to Payment Button - Only show when payment method is selected */}
+            {paymentMethod && (
+              <Button
+                size="lg"
+                className="w-full mt-6"
+                onClick={() => handleOnlinePayment(paymentMethod)}
+                disabled={isProcessing}
+              >
+                Proceed to Payment
+              </Button>
+            )}
           </div>
         )}
 

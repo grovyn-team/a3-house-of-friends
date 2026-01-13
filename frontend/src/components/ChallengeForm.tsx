@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ACTIVITIES, ActivityType } from '@/lib/constants';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { useToast } from '@/hooks/use-toast';
 
 interface ChallengeFormProps {
   open: boolean;
@@ -25,6 +26,7 @@ export interface ChallengeFormData {
 }
 
 export function ChallengeForm({ open, onOpenChange, onSubmit, loading }: ChallengeFormProps) {
+  const { toast } = useToast();
   const [players, setPlayers] = useState<Array<{ name: string; phone?: string }>>([
     { name: '', phone: '' }
   ]);
@@ -54,18 +56,30 @@ export function ChallengeForm({ open, onOpenChange, onSubmit, loading }: Challen
     // Validate players
     const validPlayers = players.filter(p => p.name.trim());
     if (validPlayers.length < 2) {
-      alert('Please add at least 2 players');
+      toast({
+        title: "Validation Error",
+        description: "Please add at least 2 players",
+        variant: "destructive",
+      });
       return;
     }
 
     if (!selectedActivity) {
-      alert('Please select a game');
+      toast({
+        title: "Validation Error",
+        description: "Please select a game",
+        variant: "destructive",
+      });
       return;
     }
 
     const activity = ACTIVITIES.find(a => a.id === selectedActivity);
     if (!activity) {
-      alert('Invalid activity selected');
+      toast({
+        title: "Validation Error",
+        description: "Invalid activity selected",
+        variant: "destructive",
+      });
       return;
     }
 
@@ -74,7 +88,11 @@ export function ChallengeForm({ open, onOpenChange, onSubmit, loading }: Challen
       : parseInt(durationType);
 
     if (duration < 15 || duration > 480) {
-      alert('Duration must be between 15 minutes and 8 hours');
+      toast({
+        title: "Validation Error",
+        description: "Duration must be between 15 minutes and 8 hours",
+        variant: "destructive",
+      });
       return;
     }
 

@@ -7,7 +7,7 @@ export interface IReservation extends Document {
   endTime: Date;
   durationMinutes: number;
   amount: number;
-  status: 'pending_payment' | 'payment_confirmed' | 'expired' | 'cancelled' | 'payment_failed';
+  status: 'pending_payment' | 'pending_approval' | 'payment_confirmed' | 'expired' | 'cancelled' | 'payment_failed';
   paymentIntentId?: string;
   paymentId?: string;
   customerName: string;
@@ -55,7 +55,7 @@ const ReservationSchema = new Schema<IReservation>(
     },
     status: {
       type: String,
-      enum: ['pending_payment', 'payment_confirmed', 'expired', 'cancelled', 'payment_failed'],
+      enum: ['pending_payment', 'pending_approval', 'payment_confirmed', 'expired', 'cancelled', 'payment_failed'],
       default: 'pending_payment',
     },
     paymentIntentId: {

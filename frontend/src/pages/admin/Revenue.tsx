@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { revenueAPI } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
-import { TrendingUp, DollarSign, Download, ChevronLeft, ChevronRight, Calendar } from "lucide-react";
+import { TrendingUp, Download, ChevronLeft, ChevronRight, Calendar } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
@@ -241,7 +241,7 @@ export default function Revenue() {
               <Card className="glass">
                 <CardHeader className="flex flex-row items-center justify-between pb-2">
                   <CardTitle className="text-sm font-medium text-muted-foreground">Total Revenue</CardTitle>
-                  <DollarSign className="h-4 w-4 text-primary" />
+                  <span className="text-primary font-bold text-lg">₹</span>
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold text-foreground">₹{summary.totalRevenue?.toLocaleString() || 0}</div>

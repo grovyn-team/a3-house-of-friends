@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Logo } from '@/components/Logo';
-import { sessionsAPI, ordersAPI } from '@/lib/api';
+import { sessionsAPI, ordersAPI, reservationsAPI } from '@/lib/api';
 import { formatCurrency, formatDuration } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { useBookingHistory } from '@/hooks/useBookingHistory';
@@ -21,7 +21,7 @@ export default function ViewBooking() {
   const [inputId, setInputId] = useState(bookingId || '');
   const [booking, setBooking] = useState<any>(null);
   const [loading, setLoading] = useState(false);
-  const [type, setType] = useState<'session' | 'order' | null>(null);
+  const [type, setType] = useState<'session' | 'order' | 'reservation' | null>(null);
 
   useEffect(() => {
     if (bookingId) {
@@ -42,37 +42,46 @@ export default function ViewBooking() {
 
     setLoading(true);
     try {
-      // Try to find in local history first
       const localBooking = getBooking(searchId);
       if (localBooking) {
         setBooking(localBooking);
-        setType(localBooking.type);
+        setType(localBooking.type === 'reservation' ? 'reservation' : localBooking.type);
         setLoading(false);
         return;
       }
 
-      // Try session first
+      let found = false;
       try {
-        const session = await sessionsAPI.getById(searchId);
-        setBooking(session);
-        setType('session');
-      } catch {
-        // Try order
+        const reservation = await reservationsAPI.getById(searchId);
+        setBooking(reservation);
+        setType('reservation');
+        found = true;
+      } catch (reservationError) {
         try {
-          const order = await ordersAPI.getById(searchId);
-          setBooking(order);
-          setType('order');
-        } catch {
-          throw new Error('Booking or order not found');
+          const session = await sessionsAPI.getById(searchId);
+          setBooking(session);
+          setType('session');
+          found = true;
+        } catch (sessionError) {
+          try {
+            const order = await ordersAPI.getById(searchId);
+            setBooking(order);
+            setType('order');
+            found = true;
+          } catch (orderError) {
+            // All failed
+            throw new Error('Booking, reservation, or order not found');
+          }
         }
       }
     } catch (error: any) {
       toast({
         title: 'Not Found',
-        description: error.message || 'Could not find booking or order with this ID.',
+        description: error.message || 'Could not find booking, reservation, or order with this ID.',
         variant: 'destructive',
       });
       setBooking(null);
+      setType(null);
     } finally {
       setLoading(false);
     }
@@ -84,21 +93,24 @@ export default function ViewBooking() {
   };
 
   const getStatusColor = (status: string) => {
-    if (status === 'active' || status === 'paid' || status === 'confirmed') {
+    if (status === 'active' || status === 'paid' || status === 'confirmed' || status === 'payment_confirmed') {
       return 'text-success';
     }
     if (status === 'completed' || status === 'served') {
       return 'text-primary';
     }
-    if (status === 'pending' || status === 'scheduled') {
+    if (status === 'pending' || status === 'scheduled' || status === 'pending_approval' || status === 'pending_payment') {
       return 'text-warning';
     }
     return 'text-destructive';
   };
 
   const getStatusIcon = (status: string) => {
-    if (status === 'active' || status === 'paid' || status === 'confirmed' || status === 'completed') {
+    if (status === 'active' || status === 'paid' || status === 'confirmed' || status === 'completed' || status === 'payment_confirmed') {
       return <CheckCircle className="w-4 h-4" />;
+    }
+    if (status === 'pending_approval' || status === 'pending_payment' || status === 'pending' || status === 'scheduled') {
+      return <Loader className="w-4 h-4 animate-spin" />;
     }
     return <XCircle className="w-4 h-4" />;
   };
@@ -169,12 +181,12 @@ export default function ViewBooking() {
                 <CardHeader>
                   <div className="flex items-center justify-between">
                     <CardTitle>
-                      {type === 'session' ? 'Session Details' : 'Order Details'}
+                      {type === 'session' ? 'Session Details' : type === 'reservation' ? 'Reservation Details' : 'Order Details'}
                     </CardTitle>
                     <div className={`flex items-center gap-2 ${getStatusColor(booking.status || booking.paymentStatus)}`}>
                       {getStatusIcon(booking.status || booking.paymentStatus)}
                       <span className="text-sm font-medium capitalize">
-                        {booking.status || booking.paymentStatus}
+                        {(booking.status || booking.paymentStatus || 'pending').replace('_', ' ')}
                       </span>
                     </div>
                   </div>
@@ -198,18 +210,31 @@ export default function ViewBooking() {
                     </div>
                   </div>
 
-                  {/* Session Details */}
-                  {type === 'session' && (
+                  {/* Session/Reservation Details */}
+                  {(type === 'session' || type === 'reservation') && (
                     <>
                       <div className="flex items-center gap-3">
                         <Calendar className="w-5 h-5 text-muted-foreground" />
                         <div>
                           <p className="text-sm text-muted-foreground">Activity</p>
                           <p className="font-medium">
-                            {booking.activityId?.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase()) || 'N/A'}
+                            {booking.activityName 
+                              || booking.activityId?.name
+                              || (booking.activityId?.type ? booking.activityId.type.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase()) : null)
+                              || (typeof booking.activityId === 'string' ? booking.activityId.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase()) : null)
+                              || 'N/A'}
                           </p>
                         </div>
                       </div>
+                      {booking.unitName && (
+                        <div className="flex items-center gap-3">
+                          <Calendar className="w-5 h-5 text-muted-foreground" />
+                          <div>
+                            <p className="text-sm text-muted-foreground">Unit</p>
+                            <p className="font-medium">{booking.unitName}</p>
+                          </div>
+                        </div>
+                      )}
                       {booking.startTime && (
                         <div className="flex items-center gap-3">
                           <Clock className="w-5 h-5 text-muted-foreground" />
@@ -232,15 +257,22 @@ export default function ViewBooking() {
                           </div>
                         </div>
                       )}
-                      {booking.durationMinutes && (
+                      {(booking.durationMinutes || booking.duration) && (
                         <div className="flex items-center gap-3">
                           <Clock className="w-5 h-5 text-muted-foreground" />
                           <div>
                             <p className="text-sm text-muted-foreground">Duration</p>
                             <p className="font-medium">
-                              {formatDuration(booking.durationMinutes)}
+                              {formatDuration(booking.durationMinutes || booking.duration)}
                             </p>
                           </div>
+                        </div>
+                      )}
+                      {type === 'reservation' && booking.status === 'pending_approval' && (
+                        <div className="rounded-lg bg-warning/10 border border-warning/20 p-4">
+                          <p className="text-sm text-warning font-medium">
+                            ⏳ Waiting for admin approval. Your session will start once approved.
+                          </p>
                         </div>
                       )}
                     </>
@@ -271,7 +303,7 @@ export default function ViewBooking() {
                         <span className="text-lg font-bold">Total Amount</span>
                       </div>
                       <span className="text-2xl font-bold text-primary">
-                        {formatCurrency(booking.amount || booking.totalAmount || 0)}
+                        {formatCurrency(booking.amount || booking.totalAmount || booking.baseAmount || 0)}
                       </span>
                     </div>
                   </div>
@@ -300,6 +332,13 @@ export default function ViewBooking() {
                     >
                       View Order Details
                     </Button>
+                  )}
+                  {type === 'reservation' && booking.status === 'pending_approval' && (
+                    <div className="rounded-lg bg-warning/10 border border-warning/20 p-4 text-center">
+                      <p className="text-sm text-warning font-medium">
+                        ⏳ Waiting for admin approval. Your session will start once approved.
+                      </p>
+                    </div>
                   )}
                 </CardContent>
               </Card>

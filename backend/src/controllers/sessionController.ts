@@ -4,6 +4,7 @@ import { SessionModel } from '../models/Session.js';
 import { ActivityModel, ActivityUnitModel } from '../models/Activity.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { calculateActivityPrice, isPeakHour } from '../lib/pricing.js';
+import { processWaitingQueue } from '../lib/queueManager.js';
 
 export const createSession = async (
   req: Request,
@@ -401,7 +402,8 @@ export const endSession = async (
       
       if (activity && actualUsageMinutes < session.duration) {
         // If actual usage is less than booked duration, recalculate
-        const peak = isPeakHour();
+        // Use the session start time to determine peak hour, not current time
+        const peak = isPeakHour(actualStartTime);
         finalAmount = calculateActivityPrice(activity, actualUsageMinutes, peak);
       } else {
         // Use original amount if usage is equal or more
@@ -427,6 +429,14 @@ export const endSession = async (
 
     // Mark unit as available
     await ActivityUnitModel.findByIdAndUpdate(session.unitId, { status: 'available' });
+
+    // Process waiting queue for this activity
+    try {
+      await processWaitingQueue(session.activityId.toString());
+    } catch (error) {
+      console.error('Error processing waiting queue:', error);
+      // Don't fail the session end if queue processing fails
+    }
 
     // Emit WebSocket events to both customer and admin
     const { getIO, notifyCustomerById } = await import('../websocket/server.js');
@@ -952,6 +962,42 @@ export const resumeSession = async (
       endTime: updatedSession.endTime,
       totalPausedDuration: updatedSession.totalPausedDuration,
       pauseHistory: updatedSession.pauseHistory,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const deleteSession = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const session = await SessionModel.findById(id);
+
+    if (!session) {
+      throw new AppError('Session not found', 404);
+    }
+
+    // Delete the session
+    await SessionModel.findByIdAndDelete(id);
+
+    // Emit WebSocket event for real-time updates
+    const { getIO } = await import('../websocket/server.js');
+    const io = getIO();
+    if (io) {
+      io.of('/admin').emit('session_deleted', {
+        session_id: id,
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Session deleted successfully',
+      id: id,
     });
   } catch (error) {
     next(error);

@@ -25,9 +25,11 @@ import {
 } from "lucide-react";
 import { formatDuration, formatCurrency } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
+import { useConfirmation } from "@/components/ui/confirmation-dialog";
 
 export default function AdminSessions() {
   const { toast } = useToast();
+  const { confirm, ConfirmationDialog } = useConfirmation();
   const [sessions, setSessions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedSession, setSelectedSession] = useState<string | null>(null);
@@ -271,25 +273,33 @@ export default function AdminSessions() {
   };
 
   const handleEndSession = async (sessionId: string) => {
-    if (!confirm('Are you sure you want to end this session?')) return;
-    
-    setActionLoading(sessionId);
-    try {
-      await sessionsAPI.end(sessionId);
-      toast({
-        title: "Session Ended",
-        description: "The session has been ended successfully.",
-      });
-      await loadSessions();
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to end session.",
-        variant: "destructive",
-      });
-    } finally {
-      setActionLoading(null);
-    }
+    confirm({
+      title: "End Session?",
+      description: "Are you sure you want to end this session? This action cannot be undone.",
+      variant: "destructive",
+      confirmText: "End Session",
+      cancelText: "Cancel",
+      onConfirm: async () => {
+        setActionLoading(sessionId);
+        try {
+          await sessionsAPI.end(sessionId);
+          toast({
+            title: "Session Ended",
+            description: "The session has been ended successfully.",
+          });
+          await loadSessions();
+        } catch (error: any) {
+          toast({
+            title: "Error",
+            description: error.message || "Failed to end session.",
+            variant: "destructive",
+          });
+          throw error;
+        } finally {
+          setActionLoading(null);
+        }
+      },
+    });
   };
 
   const getElapsedTime = (session: any) => {
@@ -623,6 +633,7 @@ export default function AdminSessions() {
           />
         </>
       ) : null}
+      <ConfirmationDialog />
     </AdminLayout>
   );
 }

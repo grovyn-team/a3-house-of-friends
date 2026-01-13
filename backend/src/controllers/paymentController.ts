@@ -5,10 +5,10 @@ import crypto from 'crypto';
 import { SessionModel } from '../models/Session.js';
 import { FoodOrderModel } from '../models/Order.js';
 import { ReservationModel } from '../models/Reservation.js';
-import { ActivityUnitModel } from '../models/Activity.js';
+import { ActivityUnitModel, ActivityModel } from '../models/Activity.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { broadcastSessionEvent, broadcastAvailabilityChange } from '../websocket/server.js';
-import { confirmReservation } from './reservationController.js';
+import { findAvailableUnit, addToWaitingQueue, processWaitingQueue } from '../lib/queueManager.js';
 
 const getRazorpay = (): Razorpay => {
   const keyId = process.env.RAZORPAY_KEY_ID;
@@ -40,7 +40,6 @@ export const createPaymentOrder = async (
       throw new AppError('Invalid payment type', 400);
     }
 
-    // Verify entity exists (handle both ObjectId and string IDs)
     if (type === 'reservation') {
       const reservation = mongoose.Types.ObjectId.isValid(entityId)
         ? await ReservationModel.findById(entityId)
@@ -83,7 +82,6 @@ export const createPaymentOrder = async (
 
     const order = await razorpay.orders.create(options);
 
-    // Update entity with razorpay order ID
     if (type === 'session') {
       await SessionModel.findByIdAndUpdate(entityId, {
         razorpayOrderId: order.id,
@@ -117,7 +115,6 @@ export const verifyPayment = async (
       throw new AppError('Payment verification data missing', 400);
     }
 
-    // Verify signature
     const text = `${razorpay_order_id}|${razorpay_payment_id}`;
     const secret = process.env.RAZORPAY_KEY_SECRET || '';
     const generatedSignature = crypto
@@ -129,21 +126,106 @@ export const verifyPayment = async (
       throw new AppError('Invalid payment signature', 400);
     }
 
-    // Update entity payment status (handle both ObjectId and string IDs)
     if (type === 'reservation') {
-      // Confirm reservation and create session
-      const reservation = await ReservationModel.findById(entityId);
+      const reservation = await ReservationModel.findById(entityId).populate('activityId');
       if (!reservation) {
         throw new AppError('Reservation not found', 404);
       }
 
-      // Confirm reservation (this creates the session)
-      await confirmReservation(
-        { body: { reservationId: entityId, paymentId: razorpay_payment_id } } as any,
-        res,
-        next
-      );
-      return;
+      if (reservation.status !== 'pending_payment') {
+        throw new AppError('Reservation is not in pending payment status', 400);
+      }
+
+      const unit = await ActivityUnitModel.findById(reservation.unitId);
+      const isUnitAvailable = unit && unit.status === 'available';
+
+      if (isUnitAvailable) {
+        reservation.status = 'payment_confirmed';
+        reservation.paymentId = razorpay_payment_id;
+        reservation.confirmedAt = new Date();
+        await reservation.save();
+
+        const activityIdForLookup = (reservation.activityId as any)?._id || reservation.activityId;
+        const activity = await ActivityModel.findById(activityIdForLookup);
+        if (!activity) {
+          throw new AppError('Activity not found', 404);
+        }
+
+        const session = await SessionModel.create({
+          reservationId: reservation._id,
+          activityId: activity._id,
+          activityType: activity.type,
+          unitId: reservation.unitId,
+          startTime: reservation.startTime,
+          endTime: reservation.endTime,
+          durationMinutes: reservation.durationMinutes,
+          duration: reservation.durationMinutes,
+          baseAmount: reservation.amount,
+          amount: reservation.amount,
+          status: 'scheduled',
+          customerName: reservation.customerName,
+          customerPhone: reservation.customerPhone,
+          qrContext: reservation.qrContext,
+          paymentStatus: 'paid',
+        });
+
+        await ActivityUnitModel.findByIdAndUpdate(reservation.unitId, {
+          status: 'occupied',
+        });
+
+        const { broadcastSessionEvent, broadcastAvailabilityChange } = await import('../websocket/server.js');
+        broadcastSessionEvent('booking_confirmed', {
+          reservation_id: reservation._id.toString(),
+          session_id: session._id.toString(),
+        });
+        broadcastAvailabilityChange(reservation.activityId.toString(), 'occupied');
+
+        res.json({
+          success: true,
+          message: 'Payment verified. Session started.',
+          sessionId: session._id.toString(),
+          reservationId: reservation._id.toString(),
+          queued: false,
+        });
+        return;
+      } else {
+        const activity = reservation.activityId as any;
+        await addToWaitingQueue(
+          entityId,
+          reservation.activityId.toString(),
+          reservation.customerName,
+          reservation.customerPhone,
+          reservation.durationMinutes,
+          reservation.amount,
+          razorpay_payment_id,
+          'paid',
+          reservation.qrContext
+        );
+
+        reservation.status = 'payment_confirmed';
+        reservation.paymentId = razorpay_payment_id;
+        reservation.confirmedAt = new Date();
+        await reservation.save();
+
+        const { getIO } = await import('../websocket/server.js');
+        const io = getIO();
+        if (io) {
+          io.of('/admin').emit('payment_completed', {
+            type: 'reservation',
+            reservationId: entityId,
+            status: 'queued',
+            message: 'Payment successful. Customer added to waiting queue.',
+          });
+        }
+
+        res.json({
+          success: true,
+          message: 'Payment verified. You have been added to the waiting queue.',
+          queued: true,
+          reservationId: entityId,
+        });
+        return;
+      }
     } else if (type === 'session') {
       const updateId = mongoose.Types.ObjectId.isValid(entityId)
         ? entityId
@@ -197,7 +279,6 @@ export const markOfflinePayment = async (
     }
 
     if (type === 'reservation') {
-      // Handle reservation offline payment
       const reservation = await ReservationModel.findById(entityId);
       if (!reservation) {
         throw new AppError('Reservation not found', 404);
@@ -207,60 +288,34 @@ export const markOfflinePayment = async (
         throw new AppError('Reservation is not in pending payment status', 400);
       }
 
-      // Update reservation
-      reservation.status = 'payment_confirmed';
+      reservation.status = 'pending_approval';
       reservation.paymentId = 'offline';
-      reservation.confirmedAt = new Date();
       await reservation.save();
 
-      // Get activity to get activityType
-      const { ActivityModel } = await import('../models/Activity.js');
-      const activity = await ActivityModel.findById(reservation.activityId);
-      if (!activity) {
-        throw new AppError('Activity not found', 404);
+      const { getIO } = await import('../websocket/server.js');
+      const io = getIO();
+      if (io) {
+        io.of('/admin').emit('pending_approval', {
+          type: 'reservation',
+          reservationId: reservation._id.toString(),
+          customerName: reservation.customerName,
+          customerPhone: reservation.customerPhone,
+          amount: reservation.amount,
+          durationMinutes: reservation.durationMinutes,
+          activityId: reservation.activityId.toString(),
+          message: 'Cash payment requires admin approval',
+          timestamp: new Date().toISOString(),
+        });
       }
-
-      // Create session from reservation
-      const session = await SessionModel.create({
-        reservationId: reservation._id,
-        activityId: reservation.activityId,
-        activityType: activity.type,
-        unitId: reservation.unitId,
-        startTime: reservation.startTime,
-        endTime: reservation.endTime,
-        durationMinutes: reservation.durationMinutes,
-        duration: reservation.durationMinutes,
-        baseAmount: reservation.amount,
-        amount: reservation.amount,
-        status: 'scheduled',
-        customerName: reservation.customerName,
-        customerPhone: reservation.customerPhone,
-        qrContext: reservation.qrContext,
-        paymentStatus: 'offline',
-      });
-
-      // Update unit status
-      await ActivityUnitModel.findByIdAndUpdate(reservation.unitId, {
-        status: 'occupied',
-      });
-
-      // Broadcast events
-      broadcastSessionEvent('booking_confirmed', {
-        reservation_id: reservation._id.toString(),
-        session_id: session._id.toString(),
-      });
-
-      broadcastAvailabilityChange(reservation.activityId.toString(), 'occupied');
 
       res.json({
         success: true,
-        message: 'Reservation confirmed and session created',
+        message: 'Payment recorded. Waiting for admin approval to assign system.',
+        requiresApproval: true,
         reservationId: reservation._id.toString(),
-        sessionId: session._id.toString(),
       });
       return;
     } else if (type === 'session') {
-      // Handle both ObjectId and string IDs
       const session = mongoose.Types.ObjectId.isValid(entityId)
         ? await SessionModel.findById(entityId)
         : await SessionModel.findOne({ _id: new mongoose.Types.ObjectId(entityId) });
@@ -279,7 +334,6 @@ export const markOfflinePayment = async (
 
       res.json({ success: true, message: 'Session marked as paid offline' });
     } else if (type === 'order') {
-      // Handle both ObjectId and string IDs
       const order = mongoose.Types.ObjectId.isValid(entityId)
         ? await FoodOrderModel.findById(entityId)
         : await FoodOrderModel.findOne({ _id: new mongoose.Types.ObjectId(entityId) });
@@ -331,10 +385,7 @@ export const handleWebhook = async (
     const event = req.body.event;
     const payment = req.body.payload.payment.entity;
 
-    // Handle payment success
     if (event === 'payment.captured') {
-      // Find session or order by razorpay order ID and update
-      // Implementation depends on your needs
     }
 
     res.json({ received: true });

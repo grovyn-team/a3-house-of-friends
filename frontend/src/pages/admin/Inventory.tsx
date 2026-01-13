@@ -13,9 +13,11 @@ import { useToast } from "@/hooks/use-toast";
 import { Plus, Search, Package, AlertTriangle, Edit, Trash2, Settings, X as XIcon, Download, Upload, ChevronLeft, ChevronRight, Trash } from "lucide-react";
 import { formatCurrency } from "@/lib/types";
 import { CSVImportDialog } from "@/components/admin/CSVImportDialog";
+import { useConfirmation } from "@/components/ui/confirmation-dialog";
 
 export default function Inventory() {
   const { toast } = useToast();
+  const { confirm, ConfirmationDialog } = useConfirmation();
   const [items, setItems] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [activities, setActivities] = useState<any[]>([]);
@@ -29,11 +31,28 @@ export default function Inventory() {
   const [editingItem, setEditingItem] = useState<any>(null);
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, pages: 0 });
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+  const [stats, setStats] = useState({
+    totalItems: 0,
+    equipment: 0,
+    consumables: 0,
+    lowStock: 0,
+  });
 
   useEffect(() => {
     setSelectedItems(new Set());
     loadData(1);
+    loadStats();
   }, [selectedCategory, selectedType, lowStockOnly, searchTerm]);
+
+  const loadStats = async () => {
+    try {
+      // Always load unfiltered stats to show total counts across all items
+      const statsData = await inventoryAPI.getStats();
+      setStats(statsData);
+    } catch (error: any) {
+      console.error("Failed to load inventory stats:", error);
+    }
+  };
 
   const handleExport = async () => {
     try {
@@ -107,6 +126,7 @@ export default function Inventory() {
       setIsDialogOpen(false);
       setEditingItem(null);
       loadData();
+      loadStats();
     } catch (error: any) {
       toast({
         title: "Error",
@@ -117,46 +137,64 @@ export default function Inventory() {
   };
 
   const handleDeleteItem = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this item?")) return;
-    
-    try {
-      await inventoryAPI.deleteItem(id);
-      toast({
-        title: "Success",
-        description: "Inventory item deleted successfully.",
-      });
-      setSelectedItems(new Set());
-      loadData();
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to delete inventory item.",
-        variant: "destructive",
-      });
-    }
+    confirm({
+      title: "Delete Item?",
+      description: "Are you sure you want to delete this item? This action cannot be undone.",
+      variant: "destructive",
+      confirmText: "Delete",
+      cancelText: "Cancel",
+      onConfirm: async () => {
+        try {
+          await inventoryAPI.deleteItem(id);
+          toast({
+            title: "Success",
+            description: "Inventory item deleted successfully.",
+          });
+          setSelectedItems(new Set());
+          loadData();
+          loadStats();
+        } catch (error: any) {
+          toast({
+            title: "Error",
+            description: error.message || "Failed to delete inventory item.",
+            variant: "destructive",
+          });
+          throw error;
+        }
+      },
+    });
   };
 
   const handleBulkDelete = async () => {
     if (selectedItems.size === 0) return;
     
-    if (!confirm(`Are you sure you want to delete ${selectedItems.size} item(s)?`)) return;
-    
-    try {
-      const ids = Array.from(selectedItems);
-      const result = await inventoryAPI.bulkDeleteItems(ids);
-      toast({
-        title: "Success",
-        description: result.message || `${selectedItems.size} item(s) deleted successfully.`,
-      });
-      setSelectedItems(new Set());
-      loadData();
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to delete items.",
-        variant: "destructive",
-      });
-    }
+    confirm({
+      title: "Delete Items?",
+      description: `Are you sure you want to delete ${selectedItems.size} item(s)? This action cannot be undone.`,
+      variant: "destructive",
+      confirmText: "Delete",
+      cancelText: "Cancel",
+      onConfirm: async () => {
+        try {
+          const ids = Array.from(selectedItems);
+          const result = await inventoryAPI.bulkDeleteItems(ids);
+          toast({
+            title: "Success",
+            description: result.message || `${selectedItems.size} item(s) deleted successfully.`,
+          });
+          setSelectedItems(new Set());
+          loadData();
+          loadStats();
+        } catch (error: any) {
+          toast({
+            title: "Error",
+            description: error.message || "Failed to delete items.",
+            variant: "destructive",
+          });
+          throw error;
+        }
+      },
+    });
   };
 
   const handleSelectAll = (checked: boolean) => {
@@ -177,10 +215,6 @@ export default function Inventory() {
     }
     setSelectedItems(newSelected);
   };
-
-  const lowStockItems = items.filter(
-    (item) => item.stockTracking === 'quantity' && item.currentStock <= item.minStockLevel
-  );
 
   return (
     <AdminLayout>
@@ -240,6 +274,7 @@ export default function Inventory() {
           onOpenChange={setIsImportDialogOpen}
           onImportComplete={() => {
             loadData(pagination.page);
+            loadStats();
           }}
           importFunction={inventoryAPI.importItems}
         />
@@ -251,7 +286,7 @@ export default function Inventory() {
               <CardTitle className="text-sm font-medium">Total Items</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{items.length}</div>
+              <div className="text-2xl font-bold">{stats.totalItems}</div>
             </CardContent>
           </Card>
           <Card>
@@ -259,7 +294,7 @@ export default function Inventory() {
               <CardTitle className="text-sm font-medium">Low Stock</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-warning">{lowStockItems.length}</div>
+              <div className="text-2xl font-bold text-warning">{stats.lowStock}</div>
             </CardContent>
           </Card>
           <Card>
@@ -267,9 +302,7 @@ export default function Inventory() {
               <CardTitle className="text-sm font-medium">Equipment</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">
-                {items.filter((i) => i.type === "equipment").length}
-              </div>
+              <div className="text-2xl font-bold">{stats.equipment}</div>
             </CardContent>
           </Card>
           <Card>
@@ -277,9 +310,7 @@ export default function Inventory() {
               <CardTitle className="text-sm font-medium">Consumables</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">
-                {items.filter((i) => i.type === "consumable").length}
-              </div>
+              <div className="text-2xl font-bold">{stats.consumables}</div>
             </CardContent>
           </Card>
         </div>
@@ -538,6 +569,7 @@ export default function Inventory() {
           </CardContent>
         </Card>
       </div>
+      <ConfirmationDialog />
     </AdminLayout>
   );
 }

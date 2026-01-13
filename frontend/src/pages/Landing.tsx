@@ -230,8 +230,7 @@ export default function Landing() {
             </div>
           </header>
 
-          {/* Welcome Card */}
-          <motion.div
+          {/* <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
@@ -244,7 +243,7 @@ export default function Landing() {
             <p className="text-muted-foreground text-sm md:text-base">
               Select an activity to book your session. No more waiting around!
             </p>
-          </motion.div>
+          </motion.div> */}
 
           {/* Activities Grid */}
           {activities.length > 0 ? (

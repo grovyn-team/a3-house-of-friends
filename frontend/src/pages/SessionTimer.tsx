@@ -13,10 +13,12 @@ import { useWebSocket } from '@/hooks/useWebSocket';
 import { PauseSessionDialog } from '@/components/PauseSessionDialog';
 import { ResumeSessionDialog } from '@/components/ResumeSessionDialog';
 import { WinnerSelectionDialog } from '@/components/WinnerSelectionDialog';
+import { useConfirmation } from '@/components/ui/confirmation-dialog';
 
 export default function SessionTimer() {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { confirm, ConfirmationDialog } = useConfirmation();
   const location = useLocation();
   const [session, setSession] = useState<Session | null>(null);
   const [isExtended, setIsExtended] = useState(false);
@@ -295,21 +297,29 @@ export default function SessionTimer() {
   };
 
   const handleEndSession = async () => {
-    if (confirm('Are you sure you want to end your session early?')) {
-      if (session) {
-        try {
-          await sessionsAPI.end(session.id);
-        } catch (error) {
-          console.error('Error ending session:', error);
+    confirm({
+      title: "End Session Early?",
+      description: "Are you sure you want to end your session early? This action cannot be undone.",
+      variant: "destructive",
+      confirmText: "End Session",
+      cancelText: "Cancel",
+      onConfirm: async () => {
+        if (session) {
+          try {
+            await sessionsAPI.end(session.id);
+          } catch (error) {
+            console.error('Error ending session:', error);
+            throw error;
+          }
         }
-      }
-      sessionStorage.removeItem('currentSession');
-      toast({
-        title: 'Session Ended',
-        description: 'Your session has been ended.',
-      });
-      navigate('/');
-    }
+        sessionStorage.removeItem('currentSession');
+        toast({
+          title: 'Session Ended',
+          description: 'Your session has been ended.',
+        });
+        navigate('/');
+      },
+    });
   };
 
   const handlePause = async (reason?: string) => {
@@ -564,6 +574,7 @@ export default function SessionTimer() {
           variant="user"
         />
       )}
+      <ConfirmationDialog />
     </div>
   );
 }

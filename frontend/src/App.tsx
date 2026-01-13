@@ -32,6 +32,7 @@ import OrderHistory from "./pages/admin/OrderHistory";
 import Revenue from "./pages/admin/Revenue";
 import Inventory from "./pages/admin/Inventory";
 import Services from "./pages/admin/Services";
+import ApprovalsAndQueue from "./pages/admin/ApprovalsAndQueue";
 
 // Chef Pages
 import ChefOrders from "./pages/chef/Orders";
@@ -76,6 +77,7 @@ const AppContent = () => {
       <Route path="/admin/revenue" element={<Revenue />} />
       <Route path="/admin/inventory" element={<Inventory />} />
       <Route path="/admin/services" element={<Services />} />
+      <Route path="/admin/approvals-queue" element={<ApprovalsAndQueue />} />
 
       {/* Chef Routes */}
       <Route path="/chef/orders" element={<ChefOrders />} />

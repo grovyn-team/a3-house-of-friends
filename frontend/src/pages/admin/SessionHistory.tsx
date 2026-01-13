@@ -3,6 +3,17 @@ import { motion } from "framer-motion";
 import { AdminLayout } from "@/components/admin/AdminLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { sessionsAPI } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { useWebSocket } from "@/hooks/useWebSocket";
@@ -18,7 +29,8 @@ import {
   Play,
   Filter,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Trash2
 } from "lucide-react";
 import { formatDuration, formatCurrency } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
@@ -33,19 +45,16 @@ export default function SessionHistory() {
   const [offset, setOffset] = useState(0);
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
-  // WebSocket for real-time updates
   const { on, isConnected } = useWebSocket({ namespace: 'admin' });
 
   useEffect(() => {
     loadSessions();
   }, [offset, statusFilter]);
 
-  // Listen for session ended event for real-time updates
   useEffect(() => {
     if (!isConnected) return;
 
     const handleSessionEnded = (data: any) => {
-      // Refresh session list when a session is ended
       loadSessions();
     };
 
@@ -96,7 +105,7 @@ export default function SessionHistory() {
         return <Badge className="bg-warning/20 text-warning border-warning/30 flex items-center gap-1"><Pause className="w-3 h-3" /> Paused</Badge>;
       case 'completed':
       case 'ended':
-        return <Badge className="bg-primary/20 text-primary border-primary/30 flex items-center gap-1"><CheckCircle className="w-3 h-3" /> Completed</Badge>;
+        return <Badge className="bg-primary/20 text-primary border-primary/30 hover:bg-primary/20 hover:text-primary flex items-center gap-1"><CheckCircle className="w-3 h-3" /> Completed</Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
@@ -105,7 +114,7 @@ export default function SessionHistory() {
   const getPaymentStatusBadge = (status: string) => {
     switch (status) {
       case 'paid':
-        return <Badge className="bg-success/20 text-success border-success/30">Paid</Badge>;
+        return <Badge className="bg-success/20 text-success border-success/30 hover:bg-success/20 hover:text-success">Paid</Badge>;
       case 'pending':
         return <Badge className="bg-warning/20 text-warning border-warning/30">Pending</Badge>;
       case 'failed':
@@ -138,6 +147,25 @@ export default function SessionHistory() {
     return Math.max(0, elapsed);
   };
 
+  const handleDeleteSession = async (sessionId: string) => {
+    try {
+      await sessionsAPI.delete(sessionId);
+      toast({
+        title: "Success",
+        description: "Session deleted successfully.",
+      });
+      // Reload sessions after deletion
+      loadSessions();
+    } catch (error: any) {
+      console.error('Failed to delete session:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete session.",
+        variant: "destructive",
+      });
+    }
+  };
+
   const totalPages = Math.ceil(total / limit);
   const currentPage = Math.floor(offset / limit) + 1;
 
@@ -153,17 +181,17 @@ export default function SessionHistory() {
 
   return (
     <AdminLayout>
-      <div className="space-y-6">
-        <div className="flex items-center justify-between flex-wrap gap-4">
+      <div className="space-y-6 -mx-4 md:-mx-6">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 px-4 md:px-6">
           <div>
-            <h1 className="text-3xl font-bold text-foreground">Session History</h1>
-            <p className="text-muted-foreground mt-1">
+            <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Session History</h1>
+            <p className="text-muted-foreground mt-1 text-sm sm:text-base">
               View all gaming sessions and their details
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 w-full sm:w-auto">
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="w-full sm:w-[180px]">
                 <Filter className="w-4 h-4 mr-2" />
                 <SelectValue placeholder="Filter by status" />
               </SelectTrigger>
@@ -194,118 +222,166 @@ export default function SessionHistory() {
           </Card>
         ) : (
           <>
-            <div className="grid gap-4 w-full max-w-5xl mx-auto">
-              {sessions.map((session, index) => (
-                <motion.div
-                  key={session.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.05 }}
-                  className="w-full"
-                >
-                  <Card className="glass border-primary/20 hover:border-primary/30 transition-all w-full">
-                    <CardHeader>
-                      <div className="flex items-start justify-between flex-wrap gap-4">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3 mb-2">
-                            <CardTitle className="text-lg">{session.customerName}</CardTitle>
-                            {getStatusBadge(session.status)}
-                            {getPaymentStatusBadge(session.paymentStatus)}
-                          </div>
-                          <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
-                            <div className="flex items-center gap-1">
-                              <Phone className="w-4 h-4" />
-                              {session.customerPhone}
+            <div className="w-full">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6">
+                {sessions.map((session, index) => (
+                  <motion.div
+                    key={session.id}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: index * 0.05 }}
+                    className="w-full"
+                  >
+                    <Card className="glass border-primary/20 hover:border-primary/30 transition-all w-full h-full flex flex-col">
+                    <CardHeader className="pb-3">
+                      <div className="flex flex-col gap-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex-1 min-w-0">
+                            <CardTitle className="text-lg mb-2 truncate">{session.customerName}</CardTitle>
+                            <div className="flex items-center gap-2 flex-wrap mb-2">
+                              {getStatusBadge(session.status)}
+                              {getPaymentStatusBadge(session.paymentStatus)}
                             </div>
-                            <div className="flex items-center gap-1">
-                              <Calendar className="w-4 h-4" />
-                              {formatDate(session.createdAt)}
+                            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-sm text-muted-foreground">
+                              <div className="flex items-center gap-1">
+                                <Phone className="w-4 h-4 flex-shrink-0" />
+                                <span className="truncate">{session.customerPhone}</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <Calendar className="w-4 h-4 flex-shrink-0" />
+                                <span className="truncate">{formatDate(session.createdAt)}</span>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-2xl font-bold text-primary">
-                            {formatCurrency(session.finalAmount || session.totalAmount || 0)}
-                          </p>
-                          {session.finalAmount !== session.totalAmount && (
-                            <p className="text-xs text-muted-foreground line-through">
-                              {formatCurrency(session.totalAmount)}
+                          <div className="flex-shrink-0">
+                            <p className="text-xl sm:text-2xl font-bold text-primary">
+                              {formatCurrency(session.finalAmount ?? session.totalAmount ?? 0)}
                             </p>
-                          )}
+                            {(() => {
+                              const finalAmount = session.finalAmount ?? 0;
+                              const totalAmount = session.totalAmount ?? 0;
+                              const finalNum = Number(finalAmount);
+                              const totalNum = Number(totalAmount);
+                              const hasDiscount = finalNum > 0 && totalNum > 0 && Math.abs(finalNum - totalNum) > 0.01;
+                              return hasDiscount ? (
+                                <p className="text-xs text-muted-foreground line-through">
+                                  {formatCurrency(totalAmount)}
+                                </p>
+                              ) : null;
+                            })()}
+                          </div>
                         </div>
                       </div>
                     </CardHeader>
-                    <CardContent>
-                      <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
-                        <div className="bg-secondary/30 rounded-lg p-3">
-                          <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Service</p>
-                          <p className="font-semibold text-foreground">{session.activityType}</p>
-                        </div>
-                        <div className="bg-secondary/30 rounded-lg p-3">
-                          <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Duration</p>
-                          <p className="font-semibold text-foreground">{formatDuration(getElapsedTime(session))}</p>
-                        </div>
-                        <div className="bg-secondary/30 rounded-lg p-3">
-                          <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Start Time</p>
-                          <p className="font-semibold text-foreground text-sm">
-                            {formatDate(session.actualStartTime || session.startTime)}
-                          </p>
-                        </div>
-                        {session.actualEndTime && (
+                    <CardContent className="pt-0 flex-1 flex flex-col">
+                      <div className="flex-1 flex flex-col">
+                        <div className="grid grid-cols-2 gap-3">
                           <div className="bg-secondary/30 rounded-lg p-3">
-                            <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">End Time</p>
-                            <p className="font-semibold text-foreground text-sm">
-                              {formatDate(session.actualEndTime)}
+                            <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Service</p>
+                            <p className="font-semibold text-foreground text-sm break-words">{session.activityType}</p>
+                          </div>
+                          <div className="bg-secondary/30 rounded-lg p-3">
+                            <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Duration</p>
+                            <p className="font-semibold text-foreground text-sm">{formatDuration(getElapsedTime(session))}</p>
+                          </div>
+                          <div className="bg-secondary/30 rounded-lg p-3 col-span-2">
+                            <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Start Time</p>
+                            <p className="font-semibold text-foreground text-xs break-words">
+                              {formatDate(session.actualStartTime || session.startTime)}
                             </p>
                           </div>
-                        )}
-                      </div>
+                          {session.actualEndTime && (
+                            <div className="bg-secondary/30 rounded-lg p-3 col-span-2">
+                              <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">End Time</p>
+                              <p className="font-semibold text-foreground text-xs break-words">
+                                {formatDate(session.actualEndTime)}
+                              </p>
+                            </div>
+                          )}
+                        </div>
 
-                      {session.totalPausedDuration > 0 && (
                         <div className="mt-4 pt-4 border-t border-border/50">
                           <p className="text-sm font-medium text-foreground mb-2">
-                            Break History ({formatDuration(session.totalPausedDuration)} total)
+                            Break History {session.totalPausedDuration > 0 && `(${formatDuration(session.totalPausedDuration)} total)`}
                           </p>
-                          <div className="space-y-2">
-                            {session.pauseHistory?.slice(0, 3).map((pause: any, idx: number) => (
-                              <div key={idx} className="flex items-center justify-between text-sm bg-secondary/20 rounded-lg p-2">
-                                <div className="flex items-center gap-2">
-                                  <Pause className="w-3 h-3 text-warning" />
-                                  <span className="text-muted-foreground">
-                                    {formatDate(pause.startTime)}
-                                  </span>
-                                  {pause.endTime && (
-                                    <>
-                                      <span className="text-muted-foreground">-</span>
-                                      <span className="text-muted-foreground">
-                                        {formatDate(pause.endTime)}
+                          {session.totalPausedDuration > 0 && session.pauseHistory && session.pauseHistory.length > 0 ? (
+                            <div className="space-y-2 max-h-[88px] overflow-y-auto pr-1">
+                              {session.pauseHistory.map((pause: any, idx: number) => (
+                                <div key={idx} className="flex items-start sm:items-center justify-between gap-2 text-sm bg-secondary/20 rounded-lg p-2 flex-shrink-0">
+                                  <div className="flex items-start sm:items-center gap-2 min-w-0 flex-1">
+                                    <Pause className="w-3 h-3 text-warning flex-shrink-0 mt-0.5 sm:mt-0" />
+                                    <div className="flex flex-col sm:flex-row sm:items-center gap-1 min-w-0">
+                                      <span className="text-muted-foreground text-xs break-words">
+                                        {formatDate(pause.startTime)}
                                       </span>
-                                    </>
-                                  )}
+                                      {pause.endTime && (
+                                        <>
+                                          <span className="text-muted-foreground hidden sm:inline">-</span>
+                                          <span className="text-muted-foreground text-xs break-words">
+                                            {formatDate(pause.endTime)}
+                                          </span>
+                                        </>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <span className="font-medium text-foreground flex-shrink-0 text-xs">
+                                    {formatDuration(pause.duration || 0)}
+                                  </span>
                                 </div>
-                                <span className="font-medium text-foreground">
-                                  {formatDuration(pause.duration || 0)}
-                                </span>
-                              </div>
-                            ))}
-                            {session.pauseHistory && session.pauseHistory.length > 3 && (
-                              <p className="text-xs text-muted-foreground text-center">
-                                +{session.pauseHistory.length - 3} more breaks
-                              </p>
-                            )}
-                          </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-center gap-2 py-4 bg-secondary/20 rounded-lg">
+                              <CheckCircle className="w-4 h-4 text-success flex-shrink-0" />
+                              <p className="text-sm text-muted-foreground">No breaks taken</p>
+                            </div>
+                          )}
                         </div>
-                      )}
+                      </div>
+
+                      <div className="mt-auto pt-4 border-t border-border/50">
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              className="w-full"
+                            >
+                              <Trash2 className="w-4 h-4 mr-2" />
+                              Delete Session
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                This action cannot be undone. This will permanently delete the session record for{" "}
+                                <strong>{session.customerName}</strong> from the database.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => handleDeleteSession(session.id)}
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              >
+                                Delete
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </div>
                     </CardContent>
                   </Card>
                 </motion.div>
               ))}
+              </div>
             </div>
 
             {/* Pagination */}
             {totalPages > 1 && (
-              <div className="flex items-center justify-between">
-                <p className="text-sm text-muted-foreground">
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-4 md:px-6">
+                <p className="text-sm text-muted-foreground text-center sm:text-left">
                   Showing {offset + 1} to {Math.min(offset + limit, total)} of {total} sessions
                 </p>
                 <div className="flex items-center gap-2">
@@ -316,9 +392,9 @@ export default function SessionHistory() {
                     disabled={offset === 0 || loading}
                   >
                     <ChevronLeft className="w-4 h-4" />
-                    Previous
+                    <span className="hidden sm:inline">Previous</span>
                   </Button>
-                  <span className="text-sm text-muted-foreground">
+                  <span className="text-sm text-muted-foreground px-2">
                     Page {currentPage} of {totalPages}
                   </span>
                   <Button
@@ -327,7 +403,7 @@ export default function SessionHistory() {
                     onClick={() => setOffset(Math.min(total - limit, offset + limit))}
                     disabled={offset + limit >= total || loading}
                   >
-                    Next
+                    <span className="hidden sm:inline">Next</span>
                     <ChevronRight className="w-4 h-4" />
                   </Button>
                 </div>

@@ -134,7 +134,7 @@ export default function Receipt() {
         </head>
         <body>
           <div class="header">
-            <h1>a3houseoffriends</h1>
+            <img src="/a3_house.svg" alt="A3 House of Friends" style="height: 40px; width: auto; margin-bottom: 10px;" />
             <p>Digital Receipt</p>
           </div>
           <div class="details">
@@ -163,7 +163,7 @@ export default function Receipt() {
 
     const receipt = receiptData.data;
     const shareData = {
-      title: 'Receipt - a3houseoffriends',
+      title: 'Receipt - A3 House of Friends',
       text: `Receipt for ${receipt.customerName}\nAmount: ${formatCurrency(receipt.amount || receipt.totalAmount || receipt.baseAmount || 0)}`,
       url: window.location.href,
     };
@@ -177,7 +177,7 @@ export default function Receipt() {
       }
     } else {
       // Fallback: Copy to clipboard
-      const text = `Receipt - a3houseoffriends\nCustomer: ${receipt.customerName}\nAmount: ${formatCurrency(receipt.amount || receipt.totalAmount || receipt.baseAmount || 0)}`;
+      const text = `Receipt - A3 House of Friends\nCustomer: ${receipt.customerName}\nAmount: ${formatCurrency(receipt.amount || receipt.totalAmount || receipt.baseAmount || 0)}`;
       try {
         await navigator.clipboard.writeText(text);
         toast({
@@ -252,7 +252,7 @@ export default function Receipt() {
             <CardContent className="pt-6">
               {/* Business Info */}
               <div className="text-center mb-6">
-                <h2 className="text-xl font-bold text-foreground mb-1">a3houseoffriends</h2>
+                <img src="/a3_house.svg" alt="A3 House of Friends" className="h-12 w-auto mx-auto mb-2" />
                 <p className="text-sm text-muted-foreground">Gaming Zone & Cafeteria</p>
               </div>
 
@@ -484,7 +484,7 @@ export default function Receipt() {
 
           {/* Footer */}
           <div className="text-center text-xs text-muted-foreground">
-            <p>Thank you for visiting a3houseoffriends!</p>
+            <p>Thank you for visiting A3 House of Friends!</p>
             <p className="mt-1">This is a digital receipt. No physical copy required.</p>
           </div>
         </motion.div>

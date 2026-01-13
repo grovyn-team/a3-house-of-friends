@@ -10,10 +10,12 @@ import { formatCurrency, formatDuration } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { useBookingHistory, BookingHistoryItem } from '@/hooks/useBookingHistory';
 import { useWebSocket } from '@/hooks/useWebSocket';
+import { useConfirmation } from '@/components/ui/confirmation-dialog';
 
 export default function MyBookings() {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { confirm, ConfirmationDialog } = useConfirmation();
   const { history, clearHistory, updateBooking } = useBookingHistory();
   const [bookings, setBookings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -23,17 +25,14 @@ export default function MyBookings() {
     loadBookings();
   }, [history]);
 
-  // Listen for real-time status updates and refresh bookings
   useEffect(() => {
     if (!isConnected) return;
 
-    // Register customer phone from history if available
     if (history.length > 0 && history[0].customerPhone) {
       const normalizedPhone = history[0].customerPhone.replace(/\D/g, '');
       emit('register_customer', { phone: normalizedPhone });
     }
 
-    // Join rooms for all bookings
     history.forEach(booking => {
       if (booking.type === 'order' && booking.orderId) {
         joinRoom(`order:${booking.orderId}`);
@@ -44,12 +43,11 @@ export default function MyBookings() {
       }
     });
 
-    // Listen for order status updates
     const cleanupOrder = on('order_status_update', (data: any) => {
       const booking = history.find(h => h.orderId === data.orderId || h.id === data.orderId);
       if (booking) {
         updateBooking(booking.id, { status: data.status });
-        loadBookings(); // Refresh to show updated status
+        loadBookings();
         toast({
           title: data.status === 'preparing' ? 'Order Being Prepared!' :
                  data.status === 'ready' ? 'Order Ready!' :
@@ -61,33 +59,51 @@ export default function MyBookings() {
       }
     });
 
-    // Listen for booking status updates
-    const cleanupBooking = on('booking_status_update', (data: any) => {
+    const cleanupBookingApproved = on('booking_approved', (data: any) => {
       const booking = history.find(h => 
         h.id === data.reservationId || 
-        h.sessionId === data.sessionId ||
-        (data.reservationId && h.id === data.reservationId)
+        h.reservationId === data.reservationId
       );
       if (booking) {
         updateBooking(booking.id, { 
-          status: data.status === 'confirmed' ? 'active' : data.status,
+          status: 'payment_confirmed',
           ...(data.sessionId && { sessionId: data.sessionId })
         });
         loadBookings(); // Refresh to show updated status
         toast({
-          title: data.status === 'confirmed' ? 'Booking Confirmed!' : 'Booking Updated',
+          title: 'Booking Approved!',
+          description: data.message || 'Your booking has been approved and session has started.',
+          variant: 'default',
+        });
+      }
+    });
+
+    const cleanupBooking = on('booking_status_update', (data: any) => {
+      const booking = history.find(h => 
+        h.id === data.reservationId || 
+        h.sessionId === data.sessionId ||
+        h.reservationId === data.reservationId ||
+        (data.reservationId && h.id === data.reservationId)
+      );
+      if (booking) {
+        updateBooking(booking.id, { 
+          status: data.status === 'confirmed' ? 'payment_confirmed' : data.status,
+          ...(data.sessionId && { sessionId: data.sessionId })
+        });
+        loadBookings(); // Refresh to show updated status
+        toast({
+          title: data.status === 'confirmed' || data.status === 'payment_confirmed' ? 'Booking Confirmed!' : 'Booking Updated',
           description: data.message || 'Your booking status has been updated.',
           variant: data.status === 'cancelled' ? 'destructive' : 'default',
         });
       }
     });
 
-    // Listen for session status updates
     const cleanupSession = on('session_status_update', (data: any) => {
       const booking = history.find(h => h.sessionId === data.sessionId || h.id === data.sessionId);
       if (booking) {
         updateBooking(booking.id, { status: data.status });
-        loadBookings(); // Refresh to show updated status
+        loadBookings();
         toast({
           title: data.status === 'active' ? 'Session Started!' : 'Session Updated',
           description: data.message || 'Your session status has been updated.',
@@ -98,6 +114,7 @@ export default function MyBookings() {
 
     return () => {
       cleanupOrder();
+      cleanupBookingApproved();
       cleanupBooking();
       cleanupSession();
     };
@@ -106,7 +123,6 @@ export default function MyBookings() {
   const loadBookings = async () => {
     setLoading(true);
     try {
-      // Load details for each booking in history
       const details = await Promise.all(
         history.map(async (item: BookingHistoryItem) => {
           try {
@@ -181,13 +197,13 @@ export default function MyBookings() {
   };
 
   const getStatusColor = (status: string) => {
-    if (status === 'active' || status === 'paid' || status === 'confirmed' || status === 'preparing' || status === 'ready') {
+    if (status === 'active' || status === 'paid' || status === 'confirmed' || status === 'payment_confirmed' || status === 'preparing' || status === 'ready') {
       return 'text-success';
     }
     if (status === 'completed' || status === 'served') {
       return 'text-primary';
     }
-    if (status === 'pending' || status === 'pending_payment' || status === 'scheduled') {
+    if (status === 'pending' || status === 'pending_payment' || status === 'pending_approval' || status === 'scheduled') {
       return 'text-warning';
     }
     if (status === 'offline') {
@@ -206,6 +222,16 @@ export default function MyBookings() {
       // Fallback to payment status only if order status not available
       if (booking.details.paymentStatus === 'offline' || booking.details.paymentStatus === 'paid') {
         return booking.details.paymentStatus === 'offline' ? 'paid' : booking.details.paymentStatus;
+      }
+    }
+    
+    // For reservations, check reservation status first
+    if (booking.type === 'reservation') {
+      if (booking.details?.status) {
+        return booking.details.status;
+      }
+      if (booking.status) {
+        return booking.status;
       }
     }
     
@@ -230,6 +256,8 @@ export default function MyBookings() {
     const statusMap: Record<string, string> = {
       'pending': 'Pending Payment',
       'pending_payment': 'Pending Payment',
+      'pending_approval': 'Pending Approval',
+      'payment_confirmed': 'Payment Confirmed',
       'paid': 'Paid',
       'offline': 'Cash Payment',
       'active': 'Active',
@@ -284,14 +312,21 @@ export default function MyBookings() {
                     variant="ghost"
                     size="icon"
                     onClick={() => {
-                      if (confirm('Clear all booking history?')) {
-                        clearHistory();
-                        setBookings([]);
-                        toast({
-                          title: 'History Cleared',
-                          description: 'All booking history has been cleared.',
-                        });
-                      }
+                      confirm({
+                        title: "Clear History?",
+                        description: "Are you sure you want to clear all booking history? This action cannot be undone.",
+                        variant: "destructive",
+                        confirmText: "Clear",
+                        cancelText: "Cancel",
+                        onConfirm: () => {
+                          clearHistory();
+                          setBookings([]);
+                          toast({
+                            title: 'History Cleared',
+                            description: 'All booking history has been cleared.',
+                          });
+                        },
+                      });
                     }}
                     className="h-9 w-9"
                   >
@@ -413,6 +448,7 @@ export default function MyBookings() {
           )}
         </motion.div>
       </div>
+      <ConfirmationDialog />
     </div>
   );
 }

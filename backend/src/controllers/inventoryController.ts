@@ -90,6 +90,56 @@ export const deleteCategory = async (
   }
 };
 
+export const getInventoryStats = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const {
+      categoryId,
+      type,
+      status,
+      search,
+    } = req.query;
+
+    const query: any = {};
+
+    if (categoryId) query.categoryId = categoryId;
+    if (type) query.type = type;
+    if (status) query.status = status;
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { sku: { $regex: search, $options: 'i' } },
+        { description: { $regex: search, $options: 'i' } },
+      ];
+    }
+
+    const [totalItems, equipmentCount, consumablesCount, lowStockCount] = await Promise.all([
+      InventoryItemModel.countDocuments(query),
+      InventoryItemModel.countDocuments({ ...query, type: 'equipment' }),
+      InventoryItemModel.countDocuments({ ...query, type: 'consumable' }),
+      InventoryItemModel.countDocuments({
+        ...query,
+        stockTracking: 'quantity',
+        $expr: {
+          $lte: ['$currentStock', '$minStockLevel'],
+        },
+      }),
+    ]);
+
+    res.json({
+      totalItems,
+      equipment: equipmentCount,
+      consumables: consumablesCount,
+      lowStock: lowStockCount,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const getAllInventoryItems = async (
   req: Request,
   res: Response,

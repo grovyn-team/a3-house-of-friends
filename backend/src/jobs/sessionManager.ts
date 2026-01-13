@@ -4,6 +4,7 @@ import { ReservationModel } from '../models/Reservation.js';
 import { ActivityUnitModel } from '../models/Activity.js';
 import { redisUtils } from '../config/redis.js';
 import { broadcastTimerUpdate, broadcastSessionEvent } from '../websocket/server.js';
+import { processWaitingQueue } from '../lib/queueManager.js';
 
 cron.schedule('* * * * *', async () => {
   try {
@@ -57,6 +58,13 @@ cron.schedule('*/30 * * * * *', async () => {
       await ActivityUnitModel.findByIdAndUpdate(session.unitId, {
         status: 'available',
       });
+
+      // Process waiting queue for this activity
+      try {
+        await processWaitingQueue(session.activityId.toString());
+      } catch (error) {
+        console.error('Error processing waiting queue:', error);
+      }
 
       broadcastSessionEvent('session_ended', {
         session_id: session._id.toString(),

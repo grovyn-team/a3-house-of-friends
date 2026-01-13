@@ -65,6 +65,8 @@ export function QueueItemCard({ entry, onAssign, onRemove }: QueueItemCardProps)
                 : (entry as any).orderStatus === 'served'
                 ? "bg-muted/15 text-muted-foreground"
                 : "bg-warning/15 text-warning"
+              : entry.status === 'pending'
+              ? "bg-warning/15 text-warning"
               : entry.status === 'next'
               ? "bg-primary/15 text-primary"
               : "bg-warning/15 text-warning"
@@ -80,6 +82,23 @@ export function QueueItemCard({ entry, onAssign, onRemove }: QueueItemCardProps)
                (entry as any).orderStatus === 'ready' ? 'Ready' :
                (entry as any).orderStatus === 'served' ? 'Served' : 'Pending'}
             </>
+          ) : entry.type === 'reservation' && (entry as any).reservationStatus ? (
+            (entry as any).reservationStatus === 'pending_approval' ? (
+              <>
+                <Clock className="h-3 w-3" />
+                Pending Approval
+              </>
+            ) : (entry as any).reservationStatus === 'payment_confirmed' ? (
+              <>
+                <CheckCircle className="h-3 w-3" />
+                Assigned
+              </>
+            ) : (
+              <>
+                <Clock className="h-3 w-3" />
+                {(entry as any).reservationStatus.replace('_', ' ')}
+              </>
+            )
           ) : (
             entry.status === 'next' ? 'Next' : 'Waiting'
           )}
@@ -134,7 +153,10 @@ export function QueueItemCard({ entry, onAssign, onRemove }: QueueItemCardProps)
             size="sm"
             className="flex-1"
             onClick={onAssign}
-            disabled={entry.type === 'order' && (entry as any).orderStatus === 'served'}
+            disabled={
+              (entry.type === 'order' && (entry as any).orderStatus === 'served') ||
+              (entry.type === 'reservation' && (entry as any).reservationStatus === 'payment_confirmed')
+            }
           >
             <CheckCircle className="h-4 w-4" />
             {entry.type === 'order' && (entry as any).orderStatus
@@ -142,6 +164,10 @@ export function QueueItemCard({ entry, onAssign, onRemove }: QueueItemCardProps)
                 (entry as any).orderStatus === 'preparing' ? 'Mark Ready' :
                 (entry as any).orderStatus === 'ready' ? 'Mark Served' :
                 'Assign'
+              : entry.type === 'reservation' && (entry as any).reservationStatus === 'pending_approval'
+              ? 'Approve'
+              : entry.type === 'reservation' && (entry as any).reservationStatus === 'payment_confirmed'
+              ? 'Assigned'
               : 'Assign'}
           </Button>
           <Button
