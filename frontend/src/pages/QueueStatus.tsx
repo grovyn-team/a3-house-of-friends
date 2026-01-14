@@ -1,133 +1,246 @@
-import { useState, useEffect } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
-import { Phone, RefreshCw, X, HelpCircle } from "lucide-react";
-import { Logo } from "@/components/Logo";
-import { QueuePositionCard } from "@/components/QueuePositionCard";
-import { Button } from "@/components/ui/button";
-import { useToast } from "@/hooks/use-toast";
+import { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import { Clock, Users, ArrowLeft } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Logo } from '@/components/Logo';
+import { queueAPI, reservationsAPI } from '@/lib/api';
+import { useToast } from '@/hooks/use-toast';
+import { useWebSocket } from '@/hooks/useWebSocket';
+import { QueuePromptDialog } from '@/components/QueuePromptDialog';
+import { useBookingHistory } from '@/hooks/useBookingHistory';
 
 export default function QueueStatus() {
-  const location = useLocation();
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
-  const [lastUpdated, setLastUpdated] = useState(new Date());
-  const [isRefreshing, setIsRefreshing] = useState(false);
+  const { removeBooking } = useBookingHistory();
+  const { on, isConnected, joinRoom, emit } = useWebSocket({ namespace: 'customer' });
+  
+  const reservationId = location.state?.reservationId;
+  const initialPosition = location.state?.queuePosition || 0;
+  const activityName = location.state?.activityName || 'Activity';
 
-  const queueData = location.state || {
-    id: "demo",
-    name: "Guest",
-    phone: "+91 12345 67890",
-    service: "playstation" as const,
-    joinedAt: new Date(),
-    position: 5,
-  };
-
-  const [position] = useState(queueData.position);
-  const peopleAhead = position - 1;
-  const estimatedWait = peopleAhead * 10;
-
-  const handleRefresh = async () => {
-    setIsRefreshing(true);
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    setLastUpdated(new Date());
-    setIsRefreshing(false);
-    toast({
-      title: "Queue Updated",
-      description: "Your position has been refreshed.",
-    });
-  };
-
-  const handleCancelBooking = () => {
-    toast({
-      title: "Booking Cancelled",
-      description: "You have been removed from the queue.",
-      variant: "destructive",
-    });
-    navigate("/");
-  };
-
-  const formatLastUpdated = () => {
-    const seconds = Math.floor((new Date().getTime() - lastUpdated.getTime()) / 1000);
-    if (seconds < 60) return `${seconds}s ago`;
-    return `${Math.floor(seconds / 60)}m ago`;
-  };
+  const [position, setPosition] = useState(initialPosition);
+  const [loading, setLoading] = useState(true);
+  const [queuePromptOpen, setQueuePromptOpen] = useState(false);
+  const [queuePromptData, setQueuePromptData] = useState<any>(null);
+  const [processing, setProcessing] = useState(false);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setLastUpdated(prev => prev);
-    }, 10000);
-    return () => clearInterval(interval);
-  }, []);
+    if (!reservationId) {
+      navigate('/');
+      return;
+    }
+
+    if (isConnected) {
+      joinRoom(`reservation:${reservationId}`);
+      const storedPhone = sessionStorage.getItem('customerPhone') || localStorage.getItem('customerPhone');
+      if (storedPhone) {
+        emit('register_customer', { phone: storedPhone });
+      }
+    }
+  }, [reservationId, isConnected, joinRoom, emit, navigate]);
+
+  useEffect(() => {
+    if (!isConnected || !reservationId) return;
+
+    const cleanupStatus = on('queue_status', (data: any) => {
+      if (data.reservationId === reservationId) {
+        setPosition(data.position);
+        toast({
+          title: 'Queue Update',
+          description: data.message,
+        });
+      }
+    });
+
+    const cleanupResource = on('queue_resource_available', (data: any) => {
+      if (data.reservationId === reservationId) {
+        setQueuePromptData(data);
+        setQueuePromptOpen(true);
+      }
+    });
+
+    return () => {
+      cleanupStatus();
+      cleanupResource();
+    };
+  }, [isConnected, reservationId, on, toast]);
+
+  useEffect(() => {
+    const loadQueueStatus = async () => {
+      if (!reservationId) return;
+      
+      try {
+        const status = await queueAPI.getQueueStatus(reservationId);
+        if (status) {
+          setPosition(status.position);
+        }
+      } catch (error) {
+        console.error('Failed to load queue status:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadQueueStatus();
+  }, [reservationId]);
+
+  const handlePay = async () => {
+    if (!queuePromptData || !reservationId) return;
+
+    setProcessing(true);
+    try {
+      const reservation = await reservationsAPI.getById(reservationId);
+      
+      navigate('/payment', {
+        state: {
+          reservationId,
+          amount: queuePromptData.amount,
+          activity: {
+            id: queuePromptData.activityId,
+            name: queuePromptData.activityName,
+          },
+          bookingRequest: {
+            activityId: queuePromptData.activityId,
+            unitId: queuePromptData.unitId,
+            duration: queuePromptData.duration,
+            customerName: reservation.customerName,
+            customerPhone: reservation.customerPhone,
+            qrContext: reservation.qrContext || {},
+          },
+          fromQueue: true,
+        },
+      });
+      setQueuePromptOpen(false);
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to proceed to payment',
+        variant: 'destructive',
+      });
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleExit = async () => {
+    if (!reservationId) return;
+
+    setProcessing(true);
+    try {
+      await reservationsAPI.exitQueue(reservationId);
+      
+      removeBooking(reservationId);
+      sessionStorage.removeItem('currentSession');
+      sessionStorage.removeItem('customerPhone');
+      localStorage.removeItem('customerPhone');
+      
+      toast({
+        title: 'Exited Queue',
+        description: 'You have successfully exited the waiting queue.',
+      });
+
+      navigate('/');
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to exit queue',
+        variant: 'destructive',
+      });
+    } finally {
+      setProcessing(false);
+    }
+  };
 
   return (
     <div className="min-h-screen gradient-mesh">
       <div className="container max-w-lg mx-auto px-4 py-6">
+        <div className="flex items-center gap-4 mb-6">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => navigate('/')}
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </Button>
+          <div>
+            <h1 className="text-xl md:text-2xl font-semibold text-foreground">
+              Queue Status
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              {activityName}
+            </p>
+          </div>
+        </div>
+
         <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
           className="space-y-6"
         >
-          {/* Header */}
-          <header className="flex items-center justify-between">
-            <Logo size="sm" />
-            <Button variant="ghost" size="icon-sm">
-              <HelpCircle className="w-5 h-5 text-muted-foreground" />
-            </Button>
-          </header>
+          <Card className="glass">
+            <CardHeader>
+              <CardTitle className="text-center">Your Position</CardTitle>
+            </CardHeader>
+            <CardContent className="text-center space-y-4">
+              {loading ? (
+                <div className="text-muted-foreground">Loading...</div>
+              ) : (
+                <>
+                  <div className="text-6xl font-bold text-primary mb-2">
+                    #{position}
+                  </div>
+                  <div className="flex items-center justify-center gap-2 text-muted-foreground">
+                    <Users className="w-4 h-4" />
+                    <span>in the waiting queue</span>
+                  </div>
+                  <div className="flex items-center justify-center gap-2 text-muted-foreground">
+                    <Clock className="w-4 h-4" />
+                    <span>Estimated wait: {Math.ceil(position * 0.5)} min</span>
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
 
-          {/* Main Card */}
-          <div className="glass-strong rounded-3xl p-5 md:p-6">
-            <QueuePositionCard
-              position={position}
-              peopleAhead={peopleAhead}
-              estimatedWait={estimatedWait}
-              service={queueData.service}
-              joinedAt={new Date(queueData.joinedAt)}
-            />
-          </div>
+          <Card className="glass">
+            <CardHeader>
+              <CardTitle>What happens next?</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm text-muted-foreground">
+              <p>• You'll be notified when a system becomes available</p>
+              <p>• You can proceed to payment or exit the queue</p>
+              <p>• Your position updates in real-time</p>
+            </CardContent>
+          </Card>
 
-          {/* Actions */}
-          <div className="space-y-3">
-            <Button
-              variant="default"
-              size="lg"
-              className="w-full"
-              onClick={() => window.location.href = 'tel:+919876543210'}
-            >
-              <Phone className="w-5 h-5" />
-              Call Cafe
-            </Button>
-
-            <div className="grid grid-cols-2 gap-3">
-              <Button
-                variant="secondary"
-                size="lg"
-                onClick={handleRefresh}
-                disabled={isRefreshing}
-              >
-                <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-                Refresh
-              </Button>
-
-              <Button
-                variant="outline-destructive"
-                size="lg"
-                onClick={handleCancelBooking}
-              >
-                <X className="w-4 h-4" />
-                Leave Queue
-              </Button>
-            </div>
-          </div>
-
-          {/* Status Bar */}
-          <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground bg-secondary/50 rounded-2xl py-3 px-4">
-            <span className="w-2 h-2 bg-success rounded-full pulse-glow" />
-            <span>Live • Updated {formatLastUpdated()}</span>
-          </div>
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={handleExit}
+            disabled={processing}
+          >
+            Exit Queue
+          </Button>
         </motion.div>
       </div>
+
+      {queuePromptData && (
+        <QueuePromptDialog
+          open={queuePromptOpen}
+          onOpenChange={setQueuePromptOpen}
+          onPay={handlePay}
+          onExit={handleExit}
+          activityName={queuePromptData.activityName}
+          unitName={queuePromptData.unitName}
+          amount={queuePromptData.amount}
+          duration={queuePromptData.duration}
+          loading={processing}
+        />
+      )}
     </div>
   );
 }

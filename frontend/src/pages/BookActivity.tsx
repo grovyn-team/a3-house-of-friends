@@ -109,16 +109,57 @@ export default function BookActivity() {
       return;
     }
 
+    let unitToBook = selectedUnitId || (availableUnits.length > 0 ? availableUnits[0].id : null);
+    
     if (availableUnits.length === 0) {
-      toast({
-        title: 'No Units Available',
-        description: 'All units for this activity are currently occupied.',
-        variant: 'destructive',
-      });
-      return;
-    }
+      try {
+        const queueResult = await reservationsAPI.joinQueue({
+          activityId: activity.id,
+          duration,
+          customerName: customerName.trim(),
+          customerPhone: customerPhone.replace(/\D/g, ''),
+          qrContext,
+          paymentStatus: 'offline',
+        });
 
-    const unitToBook = selectedUnitId || availableUnits[0].id;
+        toast({
+          title: 'Joined Waiting Queue',
+          description: `You are #${queueResult.queuePosition} in the waiting queue. You'll be notified when a system becomes available.`,
+        });
+
+        addBooking({
+          id: queueResult.reservationId,
+          type: 'reservation',
+          name: activity.name,
+          customerName: customerName.trim(),
+          customerPhone: customerPhone.replace(/\D/g, ''),
+          status: 'waiting',
+          createdAt: new Date().toISOString(),
+        });
+
+        const normalizedPhone = customerPhone.replace(/\D/g, '');
+        sessionStorage.setItem('customerPhone', normalizedPhone);
+        localStorage.setItem('customerPhone', normalizedPhone);
+        emit('register_customer', { phone: normalizedPhone });
+        joinRoom(`reservation:${queueResult.reservationId}`);
+
+        navigate('/queue-status', {
+          state: {
+            reservationId: queueResult.reservationId,
+            queuePosition: queueResult.queuePosition,
+            activityName: queueResult.activityName,
+          },
+        });
+        return;
+      } catch (error: any) {
+        toast({
+          title: 'Failed to Join Queue',
+          description: error.message || 'Could not join waiting queue. Please try again.',
+          variant: 'destructive',
+        });
+        return;
+      }
+    }
 
     setIsSubmitting(true);
 
@@ -145,8 +186,9 @@ export default function BookActivity() {
         createdAt: new Date().toISOString(),
       });
 
-      // Register customer and join reservation room
       const normalizedPhone = customerPhone.replace(/\D/g, '');
+      sessionStorage.setItem('customerPhone', normalizedPhone);
+      localStorage.setItem('customerPhone', normalizedPhone);
       emit('register_customer', { phone: normalizedPhone });
       joinRoom(`reservation:${reservation.id}`);
 
@@ -355,10 +397,15 @@ export default function BookActivity() {
             variant="glow"
             size="xl"
             className="w-full"
-            disabled={isSubmitting || availableUnits.length === 0}
+            disabled={isSubmitting}
           >
             {isSubmitting ? (
               'Processing...'
+            ) : availableUnits.length === 0 ? (
+              <>
+                Join Waiting Queue
+                <ArrowRight className="w-4 h-4 ml-2" />
+              </>
             ) : (
               <>
                 Continue to Payment

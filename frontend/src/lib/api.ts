@@ -325,10 +325,32 @@ export const reservationsAPI = {
     return apiRequest<any>(`/reservations/${id}`);
   },
 
-  confirm: async (reservationId: string, paymentId: string) => {
+  confirm: async (reservationId: string, paymentId: string, unitId?: string) => {
     return apiRequest<any>(`/reservations/${reservationId}/confirm`, {
       method: 'POST',
-      body: JSON.stringify({ reservationId, paymentId }),
+      body: JSON.stringify({ reservationId, paymentId, unitId }),
+    });
+  },
+
+  joinQueue: async (data: {
+    activityId: string;
+    duration: number;
+    customerName: string;
+    customerPhone: string;
+    qrContext?: any;
+    paymentId?: string;
+    paymentStatus?: 'paid' | 'offline';
+  }) => {
+    return apiRequest<any>('/reservations/join-queue', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  exitQueue: async (reservationId: string) => {
+    return apiRequest<any>('/reservations/exit-queue', {
+      method: 'POST',
+      body: JSON.stringify({ reservationId }),
     });
   },
 };

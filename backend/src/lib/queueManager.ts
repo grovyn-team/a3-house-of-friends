@@ -93,94 +93,27 @@ export const processWaitingQueue = async (activityId: string): Promise<void> => 
     return;
   }
 
-  nextInQueue.status = 'processing';
-  await nextInQueue.save();
+  const { getIO, notifyCustomerByPhone } = await import('../websocket/server.js');
+  const io = getIO();
 
-  try {
-    const reservation = await ReservationModel.findById(nextInQueue.reservationId);
-    if (!reservation) {
-      throw new Error('Reservation not found');
-    }
-
-    const activity = await ActivityModel.findById(activityId);
-    if (!activity) {
-      throw new Error('Activity not found');
-    }
-
-    reservation.status = 'payment_confirmed';
-    reservation.unitId = availableUnit._id;
-    reservation.paymentId = nextInQueue.paymentId;
-    reservation.confirmedAt = new Date();
-    await reservation.save();
-
-    const startTime = new Date();
-    const endTime = new Date(startTime.getTime() + nextInQueue.durationMinutes * 60 * 1000);
-
-    const session = await SessionModel.create({
-      reservationId: reservation._id,
-      activityId: reservation.activityId,
-      activityType: activity.type,
-      unitId: availableUnit._id,
-      startTime,
-      endTime,
-      durationMinutes: nextInQueue.durationMinutes,
-      duration: nextInQueue.durationMinutes,
-      baseAmount: nextInQueue.amount,
+  if (io) {
+    notifyCustomerByPhone(nextInQueue.customerPhone, 'queue_resource_available', {
+      reservationId: nextInQueue.reservationId.toString(),
+      activityId: activityId.toString(),
+      activityName: (await ActivityModel.findById(activityId))?.name || 'Activity',
+      unitId: availableUnit._id.toString(),
+      unitName: availableUnit.name,
       amount: nextInQueue.amount,
-      status: 'active',
-      actualStartTime: startTime,
-      customerName: nextInQueue.customerName,
-      customerPhone: nextInQueue.customerPhone,
-      qrContext: nextInQueue.qrContext || {},
-      paymentStatus: nextInQueue.paymentStatus,
+      duration: nextInQueue.durationMinutes,
+      message: 'A system is now available! Please proceed to payment or exit the queue.',
+      timestamp: new Date().toISOString(),
     });
-
-    await ActivityUnitModel.findByIdAndUpdate(availableUnit._id, {
-      status: 'occupied',
-    });
-
-    nextInQueue.status = 'assigned';
-    nextInQueue.assignedAt = new Date();
-    nextInQueue.sessionId = session._id;
-    await nextInQueue.save();
-
-    await reorderQueuePositions(activityId.toString());
-
-    broadcastSessionEvent('booking_confirmed', {
-      reservation_id: reservation._id.toString(),
-      session_id: session._id.toString(),
-    });
-
-    broadcastAvailabilityChange(activityId.toString(), 'occupied');
-
-    const { getIO, notifyCustomerByPhone } = await import('../websocket/server.js');
-    const io = getIO();
-    if (io) {
-      notifyCustomerByPhone(nextInQueue.customerPhone, 'queue_assigned', {
-        reservationId: reservation._id.toString(),
-        sessionId: session._id.toString(),
-        status: 'assigned',
-        message: 'A system is now available! Your session has started.',
-        timestamp: new Date().toISOString(),
-      });
-
-      io.of('/admin').emit('queue_updated', {
-        action: 'assigned',
-        queueEntry: nextInQueue.toObject(),
-        sessionId: session._id.toString(),
-      });
-    }
-  } catch (error) {
-    nextInQueue.status = 'waiting';
-    await nextInQueue.save();
-    throw error;
   }
+
+  return;
 };
 
-/**
- * Reorder queue positions after someone is assigned
- */
-const reorderQueuePositions = async (activityId: string): Promise<void> => {
+export const reorderQueuePositions = async (activityId: string): Promise<void> => {
   const waitingEntries = await WaitingQueueModel.find({
     activityId,
     status: 'waiting',

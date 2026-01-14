@@ -65,6 +65,8 @@ export function QueueItemCard({ entry, onAssign, onRemove }: QueueItemCardProps)
                 : (entry as any).orderStatus === 'served'
                 ? "bg-muted/15 text-muted-foreground"
                 : "bg-warning/15 text-warning"
+              : entry.type === 'reservation' && (entry as any).reservationStatus === 'cancelled'
+              ? "bg-destructive/15 text-destructive"
               : entry.status === 'pending'
               ? "bg-warning/15 text-warning"
               : entry.status === 'next'
@@ -83,7 +85,12 @@ export function QueueItemCard({ entry, onAssign, onRemove }: QueueItemCardProps)
                (entry as any).orderStatus === 'served' ? 'Served' : 'Pending'}
             </>
           ) : entry.type === 'reservation' && (entry as any).reservationStatus ? (
-            (entry as any).reservationStatus === 'pending_approval' ? (
+            (entry as any).reservationStatus === 'cancelled' ? (
+              <>
+                <X className="h-3 w-3" />
+                Exited
+              </>
+            ) : (entry as any).reservationStatus === 'pending_approval' ? (
               <>
                 <Clock className="h-3 w-3" />
                 Pending Approval
@@ -160,6 +167,7 @@ export function QueueItemCard({ entry, onAssign, onRemove }: QueueItemCardProps)
             onClick={onAssign}
             disabled={
               (entry.type === 'order' && (entry as any).orderStatus === 'served') ||
+              (entry.type === 'reservation' && (entry as any).reservationStatus === 'cancelled') ||
               (entry.type === 'reservation' && (entry.status === 'assigned' || (entry as any).sessionId)) ||
               (entry.type === 'reservation' && (entry as any).reservationStatus === 'payment_confirmed' && entry.status === 'assigned')
             }

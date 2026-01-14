@@ -51,6 +51,12 @@ export function useBookingHistory() {
     return history.find(item => item.id === id);
   };
 
+  const removeBooking = (id: string) => {
+    const updated = history.filter(item => item.id !== id);
+    setHistory(updated);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+  };
+
   const clearHistory = () => {
     setHistory([]);
     localStorage.removeItem(STORAGE_KEY);
@@ -61,6 +67,7 @@ export function useBookingHistory() {
     addBooking,
     updateBooking,
     getBooking,
+    removeBooking,
     clearHistory,
   };
 }

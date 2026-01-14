@@ -246,8 +246,8 @@ export default function Payment(props?: PaymentProps) {
             });
           }, 1500);
         } else {
-          // Fallback: try to confirm manually if sessionId not in response
-          const result = await reservationsAPI.confirm(reservationId, 'offline');
+          const unitId = location.state?.bookingRequest?.unitId;
+          const result = await reservationsAPI.confirm(reservationId, 'offline', unitId);
           const session = await sessionsAPI.getById(result.sessionId);
           toast({
             title: 'Payment Confirmed',
@@ -371,8 +371,8 @@ export default function Payment(props?: PaymentProps) {
               if (verifyResult.sessionId) {
                 session = await sessionsAPI.getById(verifyResult.sessionId);
               } else {
-                // Fallback: confirm reservation
-                const result = await reservationsAPI.confirm(reservationId, response.razorpay_payment_id);
+                const unitId = location.state?.bookingRequest?.unitId;
+                const result = await reservationsAPI.confirm(reservationId, response.razorpay_payment_id, unitId);
                 session = await sessionsAPI.getById(result.sessionId);
               }
               
