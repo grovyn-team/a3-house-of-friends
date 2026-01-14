@@ -19,6 +19,7 @@ import inventoryRoutes from './routes/inventoryRoutes.js';
 import revenueRoutes from './routes/revenueRoutes.js';
 
 import './jobs/sessionManager.js';
+import { startKeepAlive } from './jobs/keepAlive.js';
 
 dotenv.config();
 
@@ -61,6 +62,8 @@ server.listen(PORT, () => {
   console.log(`📡 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🌐 Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:5173'}`);
   console.log(`⚡ WebSocket server initialized`);
+  
+  startKeepAlive();
 });
 
 export default app;
