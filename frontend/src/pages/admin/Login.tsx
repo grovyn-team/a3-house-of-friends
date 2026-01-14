@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Logo } from "@/components/Logo";
@@ -14,6 +14,36 @@ export default function AdminLogin() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+
+  useEffect(() => {
+    const checkExistingAuth = async () => {
+      const token = localStorage.getItem('authToken');
+      
+      if (!token) {
+        setIsCheckingAuth(false);
+        return;
+      }
+
+      try {
+        const profile = await authAPI.getProfile();
+        
+        if (profile.role === 'chef') {
+          navigate("/chef/orders", { replace: true });
+        } else if (['admin', 'staff'].includes(profile.role)) {
+          navigate("/admin", { replace: true });
+        } else {
+          authAPI.logout();
+          setIsCheckingAuth(false);
+        }
+      } catch (error) {
+        authAPI.logout();
+        setIsCheckingAuth(false);
+      }
+    };
+
+    checkExistingAuth();
+  }, [navigate]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -64,6 +94,14 @@ export default function AdminLogin() {
     }
   };
 
+  if (isCheckingAuth) {
+    return (
+      <div className="min-h-screen gradient-mesh flex items-center justify-center p-4">
+        <div className="text-muted-foreground">Checking authentication...</div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen gradient-mesh flex items-center justify-center p-4">
       <motion.div
@@ -72,7 +110,6 @@ export default function AdminLogin() {
         className="w-full max-w-sm"
       >
         <div className="glass-strong rounded-3xl p-6 md:p-8">
-          {/* Header */}
           <div className="text-center mb-6">
             <Logo size="md" className="justify-center mb-4" />
             <h1 className="text-xl font-bold text-foreground">Admin Login</h1>
@@ -81,7 +118,6 @@ export default function AdminLogin() {
             </p>
           </div>
 
-          {/* Form */}
           <form onSubmit={handleLogin} className="space-y-4">
             <div className="space-y-2">
               <label className="text-sm font-medium text-foreground">Username</label>

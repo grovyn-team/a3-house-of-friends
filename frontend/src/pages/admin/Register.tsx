@@ -25,7 +25,7 @@ export default function AdminRegister() {
     password: "",
     confirmPassword: "",
     name: "",
-    role: "staff" as "admin" | "staff",
+    role: "staff" as "admin" | "staff" | "chef",
   });
   const [isLoading, setIsLoading] = useState(false);
 
@@ -185,6 +185,7 @@ export default function AdminRegister() {
                 <SelectContent>
                   <SelectItem value="staff">Staff</SelectItem>
                   <SelectItem value="admin">Admin</SelectItem>
+                  <SelectItem value="chef">Chef</SelectItem>
                 </SelectContent>
               </Select>
             </div>

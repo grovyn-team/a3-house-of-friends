@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Logo } from "@/components/Logo";
@@ -14,6 +14,34 @@ export default function ChefLogin() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+
+  useEffect(() => {
+    const checkExistingAuth = async () => {
+      const token = localStorage.getItem('authToken');
+      
+      if (!token) {
+        setIsCheckingAuth(false);
+        return;
+      }
+
+      try {
+        const profile = await authAPI.getProfile();
+        
+        if (profile.role === 'chef') {
+          navigate("/chef/orders", { replace: true });
+        } else {
+          authAPI.logout();
+          setIsCheckingAuth(false);
+        }
+      } catch (error) {
+        authAPI.logout();
+        setIsCheckingAuth(false);
+      }
+    };
+
+    checkExistingAuth();
+  }, [navigate]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,11 +60,11 @@ export default function ChefLogin() {
     try {
       const response = await authAPI.login(username, password);
       
-      if (!['chef', 'admin', 'staff'].includes(response.user.role)) {
+      if (response.user.role !== 'chef') {
         authAPI.logout();
         toast({
           title: "Access Denied",
-          description: "You don't have permission to access this area.",
+          description: "Only chef accounts can access this area. Please use the admin login for admin/staff accounts.",
           variant: "destructive",
         });
         setIsLoading(false);
@@ -59,6 +87,14 @@ export default function ChefLogin() {
       setIsLoading(false);
     }
   };
+
+  if (isCheckingAuth) {
+    return (
+      <div className="min-h-screen gradient-mesh flex items-center justify-center p-4">
+        <div className="text-muted-foreground">Checking authentication...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen gradient-mesh flex items-center justify-center p-4">

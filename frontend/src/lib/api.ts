@@ -48,7 +48,7 @@ async function apiRequest<T>(
 }
 
 export const authAPI = {
-  register: async (username: string, email: string, password: string, name: string, role?: 'admin' | 'staff') => {
+  register: async (username: string, email: string, password: string, name: string, role?: 'admin' | 'staff' | 'chef') => {
     const data = await apiRequest<{ token: string; user: any }>('/auth/register', {
       method: 'POST',
       body: JSON.stringify({ username, email, password, name, role }),
