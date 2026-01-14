@@ -2,14 +2,17 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useToast } from './use-toast';
 
-// Use the same base URL as API, but without /api suffix
 const getBaseUrl = () => {
-  const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
-  // Remove /api suffix if present, and use the base URL
-  return apiUrl.replace('/api', '');
+  if (import.meta.env.VITE_WS_URL) {
+    return import.meta.env.VITE_WS_URL;
+  }
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL.replace('/api', '');
+  }
+  throw new Error('VITE_API_URL or VITE_WS_URL must be set in environment variables');
 };
 
-const WS_URL = import.meta.env.VITE_WS_URL || getBaseUrl();
+const WS_URL = getBaseUrl();
 
 interface UseWebSocketOptions {
   namespace?: 'customer' | 'admin' | 'staff';

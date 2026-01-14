@@ -43,12 +43,10 @@ import NotFound from "./pages/NotFound";
 const queryClient = new QueryClient();
 
 const AppContent = () => {
-  // Apply system theme (light/dark)
   useTheme();
 
   return (
     <Routes>
-      {/* Customer Routes - QR Code Entry */}
       <Route path="/" element={<Landing />} />
       <Route path="/book" element={<BookActivity />} />
       <Route path="/payment" element={<Payment />} />
@@ -79,7 +77,6 @@ const AppContent = () => {
       <Route path="/admin/services" element={<Services />} />
       <Route path="/admin/approvals-queue" element={<ApprovalsAndQueue />} />
 
-      {/* Chef Routes */}
       <Route path="/chef/orders" element={<ChefOrders />} />
       <Route path="/chef/inventory" element={<ChefInventory />} />
 

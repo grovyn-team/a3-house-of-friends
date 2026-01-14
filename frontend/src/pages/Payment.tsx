@@ -3,9 +3,8 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ArrowLeft, CreditCard, Smartphone, Wallet, CheckCircle, XCircle, Banknote } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import { Logo } from '@/components/Logo';
 import { paymentsAPI, sessionsAPI, ordersAPI, reservationsAPI } from '@/lib/api';
 import { formatCurrency, QRContext } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
@@ -247,6 +246,7 @@ export default function Payment(props?: PaymentProps) {
             });
           }, 1500);
         } else {
+          // Fallback: try to confirm manually if sessionId not in response
           const result = await reservationsAPI.confirm(reservationId, 'offline');
           const session = await sessionsAPI.getById(result.sessionId);
           toast({
@@ -292,6 +292,7 @@ export default function Payment(props?: PaymentProps) {
     setPaymentStatus('processing');
 
     try {
+      // Create Razorpay order
       const paymentOrder = await paymentsAPI.createOrder({
         amount: finalAmount || amount || 0,
         type: paymentType,
@@ -300,6 +301,7 @@ export default function Payment(props?: PaymentProps) {
         customerPhone: customerPhone || '',
       });
 
+      // Initialize Razorpay
       if (!window.Razorpay) {
         throw new Error('Razorpay SDK not loaded');
       }
@@ -313,6 +315,7 @@ export default function Payment(props?: PaymentProps) {
         description,
         handler: async (response: any) => {
           try {
+            // Verify payment
             const verifyResult = await paymentsAPI.verify({
               razorpay_order_id: response.razorpay_order_id,
               razorpay_payment_id: response.razorpay_payment_id,
@@ -324,6 +327,7 @@ export default function Payment(props?: PaymentProps) {
             setPaymentStatus('success');
 
             if (orderId) {
+              // Get updated order
               const order = await ordersAPI.getById(orderId);
               toast({
                 title: 'Payment Successful',
@@ -335,6 +339,7 @@ export default function Payment(props?: PaymentProps) {
                 });
               }, 1500);
             } else if (reservationId) {
+              // Check if user was added to queue (from verifyResult)
               if (verifyResult.queued) {
                 // User was added to waiting queue
                 addBooking({

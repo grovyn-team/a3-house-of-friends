@@ -32,7 +32,7 @@ export default function ApprovalsAndQueue() {
 
   useEffect(() => {
     loadData();
-    const interval = setInterval(loadData, 5000); // Refresh every 5 seconds
+    const interval = setInterval(loadData, parseInt(import.meta.env.VITE_DATA_REFRESH_INTERVAL || '5000'));
     return () => clearInterval(interval);
   }, [selectedActivity]);
 

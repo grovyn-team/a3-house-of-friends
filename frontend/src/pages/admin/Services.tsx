@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { API_BASE_URL } from "@/lib/api";
 import { AdminLayout } from "@/components/admin/AdminLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -59,8 +60,8 @@ export default function Services() {
 
   const handleCreateService = async (serviceData: any) => {
     try {
-      // This would need to be added to activitiesAPI
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/activities`, {
+      if (!API_BASE_URL) throw new Error('VITE_API_URL is not configured');
+      const response = await fetch(`${API_BASE_URL}/activities`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -89,8 +90,9 @@ export default function Services() {
 
   const handleCreateInstance = async (instanceData: any) => {
     try {
+      if (!API_BASE_URL) throw new Error('VITE_API_URL is not configured');
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/activities/${selectedService}/units`,
+        `${API_BASE_URL}/activities/${selectedService}/units`,
         {
           method: 'POST',
           headers: {
@@ -147,8 +149,9 @@ export default function Services() {
       cancelText: "Cancel",
       onConfirm: async () => {
         try {
+          if (!API_BASE_URL) throw new Error('VITE_API_URL is not configured');
           const response = await fetch(
-            `${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/activities/units/${instanceId}`,
+            `${API_BASE_URL}/activities/units/${instanceId}`,
             {
               method: 'DELETE',
               headers: {

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 
 export interface BookingHistoryItem {
   id: string;
-  type: 'session' | 'order';
+  type: 'session' | 'order' | 'reservation';
   activityName?: string;
   customerName: string;
   customerPhone: string;
@@ -11,6 +11,9 @@ export interface BookingHistoryItem {
   createdAt: string;
   sessionId?: string;
   orderId?: string;
+  reservationId?: string;
+  activityId?: string;
+  durationMinutes?: number;
 }
 
 const STORAGE_KEY = 'a3houseoffriends_booking_history';
