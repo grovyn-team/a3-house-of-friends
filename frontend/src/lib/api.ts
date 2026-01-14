@@ -1,16 +1,9 @@
-export const API_BASE_URL = import.meta.env.VITE_API_URL;
-
-if (!API_BASE_URL) {
-  console.error('VITE_API_URL is not set in environment variables');
-}
+export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
 async function apiRequest<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
-  if (!API_BASE_URL) {
-    throw new Error('VITE_API_URL is not configured. Please set it in your .env file.');
-  }
   const url = `${API_BASE_URL}${endpoint}`;
   const token = localStorage.getItem('authToken');
 
@@ -35,7 +28,7 @@ async function apiRequest<T>(
     }
     
     if (response.status === 404) {
-      errorMessage = `Backend server not found. Make sure the backend is running at ${API_BASE_URL || 'the configured URL'}.`;
+      errorMessage = `Backend server not found. Make sure the backend is running at ${API_BASE_URL}.`;
     }
     
     throw new Error(errorMessage);

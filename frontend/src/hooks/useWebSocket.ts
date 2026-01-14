@@ -9,7 +9,7 @@ const getBaseUrl = () => {
   if (import.meta.env.VITE_API_URL) {
     return import.meta.env.VITE_API_URL.replace('/api', '');
   }
-  throw new Error('VITE_API_URL or VITE_WS_URL must be set in environment variables');
+  return 'http://localhost:3001';
 };
 
 const WS_URL = getBaseUrl();

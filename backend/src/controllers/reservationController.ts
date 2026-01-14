@@ -112,17 +112,19 @@ export const createReservation = async (
 
       const { getIO } = await import('../websocket/server.js');
       const io = getIO();
-      io.of('/admin').emit('booking_created', {
-        reservationId: reservation._id.toString(),
-        activityId: activity.type,
-        activityName: activity.name,
-        customerName: reservation.customerName,
-        customerPhone: reservation.customerPhone,
-        amount: reservation.amount,
-        duration: reservation.durationMinutes,
-        qrContext: reservation.qrContext,
-        timestamp: new Date().toISOString(),
-      });
+      if (io) {
+        io.of('/admin').emit('booking_created', {
+          reservationId: reservation._id.toString(),
+          activityId: activity.type,
+          activityName: activity.name,
+          customerName: reservation.customerName,
+          customerPhone: reservation.customerPhone,
+          amount: reservation.amount,
+          duration: reservation.durationMinutes,
+          qrContext: reservation.qrContext,
+          timestamp: new Date().toISOString(),
+        });
+      }
 
       res.status(201).json({
         id: reservation._id.toString(),

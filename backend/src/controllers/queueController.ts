@@ -122,7 +122,7 @@ export const getQueue = async (
         position: reservationQueue.length + assignedQueue.length + index + 1,
         type: 'order',
         itemCount: order.items?.length || 0,
-        amount: order.totalAmount || order.amount || 0,
+        amount: order.totalAmount || 0,
         items: order.items || [],
         orderStatus: order.status,
         paymentStatus: order.paymentStatus,
@@ -147,7 +147,7 @@ export const getQueue = async (
         waiting: allQueue.filter(e => e.status === 'waiting').length,
         pending: allQueue.filter(e => e.status === 'pending').length,
         next: allQueue.filter(e => e.status === 'next').length,
-        serving: allQueue.filter(e => e.status === 'serving').length,
+        serving: 0,
         byService: {
           playstation: allQueue.filter(e => e.service === 'playstation').length,
           snooker: allQueue.filter(e => e.service === 'snooker').length,
@@ -427,7 +427,9 @@ export const assignQueueEntry = async (
         timestamp: new Date().toISOString(),
       });
       
-      io.of('/admin').emit('queue_updated', { action: 'assigned', entryId: targetId, type });
+      if (io) {
+        io.of('/admin').emit('queue_updated', { action: 'assigned', entryId: targetId, type });
+      }
 
     } else if (type === 'order') {
       const order = await FoodOrderModel.findById(targetId);
@@ -486,7 +488,9 @@ export const assignQueueEntry = async (
         timestamp: new Date().toISOString(),
       });
       
-      io.of('/admin').emit('queue_updated', { action: 'assigned', entryId: targetId, type });
+      if (io) {
+        io.of('/admin').emit('queue_updated', { action: 'assigned', entryId: targetId, type });
+      }
 
     } else if (type === 'session') {
       const session = await SessionModel.findById(targetId);
@@ -554,7 +558,9 @@ export const assignQueueEntry = async (
         timestamp: new Date().toISOString(),
       });
       
-      io.of('/admin').emit('queue_updated', { action: 'assigned', entryId: targetId, type });
+      if (io) {
+        io.of('/admin').emit('queue_updated', { action: 'assigned', entryId: targetId, type });
+      }
     } else {
       throw new AppError('Invalid entry type', 400);
     }
@@ -594,7 +600,7 @@ export const removeQueueEntry = async (
 
       if (reservation.unitId) {
         const unit = await ActivityUnitModel.findById(reservation.unitId);
-        if (unit && unit.status === 'reserved') {
+        if (unit && unit.status === 'occupied') {
           unit.status = 'available';
           await unit.save();
         }
@@ -626,7 +632,9 @@ export const removeQueueEntry = async (
         timestamp: new Date().toISOString(),
       });
       
-      io.of('/admin').emit('queue_updated', { action: 'removed', entryId: targetId, type });
+      if (io) {
+        io.of('/admin').emit('queue_updated', { action: 'removed', entryId: targetId, type });
+      }
 
     } else if (type === 'order') {
       const order = await FoodOrderModel.findById(targetId);
@@ -664,7 +672,9 @@ export const removeQueueEntry = async (
         timestamp: new Date().toISOString(),
       });
       
-      io.of('/admin').emit('queue_updated', { action: 'removed', entryId: targetId, type });
+      if (io) {
+        io.of('/admin').emit('queue_updated', { action: 'removed', entryId: targetId, type });
+      }
 
     } else if (type === 'session') {
       const session = await SessionModel.findById(targetId);
@@ -712,7 +722,9 @@ export const removeQueueEntry = async (
         timestamp: new Date().toISOString(),
       });
       
-      io.of('/admin').emit('queue_updated', { action: 'removed', entryId: targetId, type });
+      if (io) {
+        io.of('/admin').emit('queue_updated', { action: 'removed', entryId: targetId, type });
+      }
     } else {
       throw new AppError('Invalid entry type', 400);
     }

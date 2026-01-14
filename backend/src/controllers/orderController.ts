@@ -308,19 +308,20 @@ export const updateOrderStatus = async (
         timestamp: new Date().toISOString(),
       });
       
-      notifyCustomerById(order._id.toString(), 'order', {
+      notifyCustomerById(order._id.toString(), 'order', 'order_status_update', {
         type: 'order',
         orderId: order._id.toString(),
         status: order.status,
         message,
         timestamp: new Date().toISOString(),
       });
-
-      io.of('/admin').emit('queue_updated', {
-        type: 'order',
-        orderId: order._id.toString(),
-        status: order.status,
-      });
+      if (io) {
+        io.of('/admin').emit('queue_updated', {
+          type: 'order',
+          orderId: order._id.toString(),
+          status: order.status,
+        });
+      }
     }
 
     res.json({

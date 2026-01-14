@@ -1,5 +1,5 @@
 import { Server as HTTPServer } from 'http';
-import { Server as SocketIOServer } from 'socket.io';
+import { Server as SocketIOServer, Namespace } from 'socket.io';
 import { createAdapter } from '@socket.io/redis-adapter';
 import { getRedis } from '../config/redis.js';
 import jwt from 'jsonwebtoken';
@@ -34,7 +34,7 @@ export const initializeWebSocket = (server: HTTPServer): SocketIOServer => {
 
 const customerSocketMap = new Map<string, Set<string>>();
 
-function setupCustomerNamespace(namespace: SocketIOServer) {
+function setupCustomerNamespace(namespace: Namespace) {
   namespace.use(async (socket, next) => {
     const { token } = socket.handshake.auth;
     if (token) {
@@ -50,10 +50,12 @@ function setupCustomerNamespace(namespace: SocketIOServer) {
   namespace.on('connection', (socket) => {
     console.log('Customer connected:', socket.id);
 
-    io.of('/admin').emit('visitor_connected', {
-      socketId: socket.id,
-      timestamp: new Date().toISOString(),
-    });
+    if (io) {
+      io.of('/admin').emit('visitor_connected', {
+        socketId: socket.id,
+        timestamp: new Date().toISOString(),
+      });
+    }
 
     socket.on('register_customer', ({ phone }) => {
       if (phone) {
@@ -90,31 +92,39 @@ function setupCustomerNamespace(namespace: SocketIOServer) {
     });
 
     socket.on('visitor_connected', (data) => {
-      io.of('/admin').emit('visitor_connected', {
-        ...data,
-        socketId: socket.id,
-      });
+      if (io) {
+        io.of('/admin').emit('visitor_connected', {
+          ...data,
+          socketId: socket.id,
+        });
+      }
     });
 
     socket.on('booking_created', (data) => {
-      io.of('/admin').emit('booking_created', {
-        ...data,
-        socketId: socket.id,
-      });
+      if (io) {
+        io.of('/admin').emit('booking_created', {
+          ...data,
+          socketId: socket.id,
+        });
+      }
     });
 
     socket.on('order_created', (data) => {
-      io.of('/admin').emit('order_created', {
-        ...data,
-        socketId: socket.id,
-      });
+      if (io) {
+        io.of('/admin').emit('order_created', {
+          ...data,
+          socketId: socket.id,
+        });
+      }
     });
 
     socket.on('payment_completed', (data) => {
-      io.of('/admin').emit('payment_completed', {
-        ...data,
-        socketId: socket.id,
-      });
+      if (io) {
+        io.of('/admin').emit('payment_completed', {
+          ...data,
+          socketId: socket.id,
+        });
+      }
     });
 
     socket.on('ping', ({ session_id, timestamp }) => {
@@ -134,10 +144,12 @@ function setupCustomerNamespace(namespace: SocketIOServer) {
         }
       }
       
-      io.of('/admin').emit('visitor_disconnected', {
-        socketId: socket.id,
-        timestamp: new Date().toISOString(),
-      });
+      if (io) {
+        io.of('/admin').emit('visitor_disconnected', {
+          socketId: socket.id,
+          timestamp: new Date().toISOString(),
+        });
+      }
     });
   });
 }
@@ -169,7 +181,7 @@ export function notifyCustomerById(id: string, type: 'reservation' | 'order' | '
   console.log(`Notified customer in room ${room}: ${event}`);
 }
 
-function setupAdminNamespace(namespace: SocketIOServer) {
+function setupAdminNamespace(namespace: Namespace) {
   namespace.use(async (socket, next) => {
     const { authToken } = socket.handshake.auth;
     
@@ -210,7 +222,7 @@ function setupAdminNamespace(namespace: SocketIOServer) {
   });
 }
 
-function setupStaffNamespace(namespace: SocketIOServer) {
+function setupStaffNamespace(namespace: Namespace) {
   namespace.use(async (socket, next) => {
     const { authToken } = socket.handshake.auth;
     

@@ -10,7 +10,7 @@ export const exportRevenueData = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { startDate, endDate } = req.query;
+    const { startDate: startDateParam, endDate: endDateParam } = req.query;
     
     const sessionQuery: any = {
       paymentStatus: { $in: ['paid', 'offline'] },
@@ -20,12 +20,11 @@ export const exportRevenueData = async (
       paymentStatus: { $in: ['paid', 'offline'] },
     };
 
-    // Only apply date filters if both dates are provided
-    if (startDate && endDate) {
-      let start = new Date(startDate as string);
+    let start = startDateParam ? new Date(startDateParam as string) : new Date(0);
+    let end = endDateParam ? new Date(endDateParam as string) : new Date();
+    
+    if (startDateParam && endDateParam) {
       start.setHours(0, 0, 0, 0);
-      
-      let end = new Date(endDate as string);
       end.setHours(23, 59, 59, 999);
       
       sessionQuery.createdAt = { $gte: start, $lte: end };

@@ -60,7 +60,6 @@ export default function Services() {
 
   const handleCreateService = async (serviceData: any) => {
     try {
-      if (!API_BASE_URL) throw new Error('VITE_API_URL is not configured');
       const response = await fetch(`${API_BASE_URL}/activities`, {
         method: 'POST',
         headers: {
@@ -90,7 +89,6 @@ export default function Services() {
 
   const handleCreateInstance = async (instanceData: any) => {
     try {
-      if (!API_BASE_URL) throw new Error('VITE_API_URL is not configured');
       const response = await fetch(
         `${API_BASE_URL}/activities/${selectedService}/units`,
         {
@@ -149,7 +147,6 @@ export default function Services() {
       cancelText: "Cancel",
       onConfirm: async () => {
         try {
-          if (!API_BASE_URL) throw new Error('VITE_API_URL is not configured');
           const response = await fetch(
             `${API_BASE_URL}/activities/units/${instanceId}`,
             {
