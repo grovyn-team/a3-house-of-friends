@@ -208,7 +208,7 @@ export default function Landing() {
             
             {/* Quick Actions */}
             <div className="flex items-center justify-center gap-2 mt-4 flex-wrap">
-              <Button
+              {/* <Button
                 variant="glow"
                 size="sm"
                 onClick={() => setChallengeDialogOpen(true)}
@@ -216,7 +216,7 @@ export default function Landing() {
               >
                 <Users className="w-4 h-4 mr-2" />
                  Loose to pay
-              </Button>
+              </Button> */}
               {history.length > 0 && (
                 <Button
                   variant="outline"
