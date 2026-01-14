@@ -31,7 +31,6 @@ export default function SessionTimer() {
 
   const isPaused = session?.status === 'paused' || !!session?.currentPauseStart;
 
-  // Handler for when winner is selected in the dialog
   const handleDialogWinnerSelected = async () => {
     if (session?.id) {
       try {
@@ -43,7 +42,6 @@ export default function SessionTimer() {
     }
   };
   
-  // Use real-time timer hook - updates every second with WebSocket sync every 10 seconds
   const { elapsed, remaining, isActive, formatTime } = useTimer(
     session?.id || null,
     session?.actualStartTime || session?.startTime,
@@ -53,49 +51,107 @@ export default function SessionTimer() {
     session?.totalPausedDuration
   );
 
-  // WebSocket for real-time updates
   const { on, isConnected, joinRoom, emit } = useWebSocket({ namespace: 'customer' });
 
   useEffect(() => {
-    // Get session from location state or storage
-    const sessionData = location.state?.session || sessionStorage.getItem('currentSession');
-    
-    if (sessionData) {
-      try {
-        const parsed = typeof sessionData === 'string' ? JSON.parse(sessionData) : sessionData;
-        // Convert date strings back to Date objects
-        parsed.startTime = new Date(parsed.startTime);
-        parsed.endTime = new Date(parsed.endTime);
-        if (parsed.currentPauseStart) {
-          parsed.currentPauseStart = new Date(parsed.currentPauseStart);
+    const loadSession = async () => {
+      const sessionData = location.state?.session || sessionStorage.getItem('currentSession');
+      
+      if (sessionData) {
+        try {
+          const parsed = typeof sessionData === 'string' ? JSON.parse(sessionData) : sessionData;
+          const sessionId = parsed.id || parsed._id;
+          
+          if (sessionId) {
+            try {
+              const freshSession = await sessionsAPI.getById(sessionId);
+              
+              if (freshSession.status === 'ended' || freshSession.status === 'completed' || freshSession.status === 'cancelled') {
+                sessionStorage.removeItem('currentSession');
+                toast({
+                  title: 'Session Ended',
+                  description: 'This session has ended.',
+                  variant: 'default',
+                });
+                navigate('/my-bookings');
+                return;
+              }
+              
+              setSession(freshSession);
+              sessionStorage.setItem('currentSession', JSON.stringify(freshSession));
+            } catch (error: any) {
+              if (error.message?.includes('not found') || error.message?.includes('404')) {
+                sessionStorage.removeItem('currentSession');
+                toast({
+                  title: 'Session Not Found',
+                  description: 'This session no longer exists.',
+                  variant: 'destructive',
+                });
+                navigate('/my-bookings');
+                return;
+              }
+              
+              const parsedSession = parsed;
+              parsedSession.startTime = new Date(parsedSession.startTime);
+              parsedSession.endTime = new Date(parsedSession.endTime);
+              if (parsedSession.currentPauseStart) {
+                parsedSession.currentPauseStart = new Date(parsedSession.currentPauseStart);
+              }
+              if (parsedSession.pauseHistory) {
+                parsedSession.pauseHistory = parsedSession.pauseHistory.map((pause: any) => ({
+                  ...pause,
+                  startTime: new Date(pause.startTime),
+                  endTime: pause.endTime ? new Date(pause.endTime) : undefined,
+                }));
+              }
+              if (parsedSession.challengeData) {
+                parsedSession.challengeData = {
+                  ...parsedSession.challengeData,
+                  winnerSelectedAt: parsedSession.challengeData.winnerSelectedAt 
+                    ? new Date(parsedSession.challengeData.winnerSelectedAt) 
+                    : undefined,
+                };
+              }
+              setSession(parsedSession);
+            }
+          } else {
+            const parsedSession = parsed;
+            parsedSession.startTime = new Date(parsedSession.startTime);
+            parsedSession.endTime = new Date(parsedSession.endTime);
+            if (parsedSession.currentPauseStart) {
+              parsedSession.currentPauseStart = new Date(parsedSession.currentPauseStart);
+            }
+            if (parsedSession.pauseHistory) {
+              parsedSession.pauseHistory = parsedSession.pauseHistory.map((pause: any) => ({
+                ...pause,
+                startTime: new Date(pause.startTime),
+                endTime: pause.endTime ? new Date(pause.endTime) : undefined,
+              }));
+            }
+            if (parsedSession.challengeData) {
+              parsedSession.challengeData = {
+                ...parsedSession.challengeData,
+                winnerSelectedAt: parsedSession.challengeData.winnerSelectedAt 
+                  ? new Date(parsedSession.challengeData.winnerSelectedAt) 
+                  : undefined,
+              };
+            }
+            setSession(parsedSession);
+          }
+        } catch (e) {
+          console.error('Error parsing session:', e);
+          sessionStorage.removeItem('currentSession');
+          navigate('/');
         }
-        if (parsed.pauseHistory) {
-          parsed.pauseHistory = parsed.pauseHistory.map((pause: any) => ({
-            ...pause,
-            startTime: new Date(pause.startTime),
-            endTime: pause.endTime ? new Date(pause.endTime) : undefined,
-          }));
-        }
-        if (parsed.challengeData) {
-          parsed.challengeData = {
-            ...parsed.challengeData,
-            winnerSelectedAt: parsed.challengeData.winnerSelectedAt 
-              ? new Date(parsed.challengeData.winnerSelectedAt) 
-              : undefined,
-          };
-        }
-        setSession(parsed);
-        setLoading(false);
-      } catch (e) {
-        console.error('Error parsing session:', e);
+      } else {
         navigate('/');
       }
-    } else {
-      navigate('/');
-    }
-  }, [location.state, navigate]);
+      setLoading(false);
+    };
+    
+    loadSession();
+  }, [location.state, navigate, toast]);
 
-  // Listen for session ending soon event
   useEffect(() => {
     if (remaining > 0 && remaining <= 300) {
       toast({
@@ -105,28 +161,64 @@ export default function SessionTimer() {
     }
   }, [remaining, toast]);
 
-  // Join session room for real-time updates
   useEffect(() => {
     if (isConnected && session?.id) {
       joinRoom(`session:${session.id}`);
     }
   }, [isConnected, session?.id, joinRoom]);
 
-  // Listen for WebSocket events
+  useEffect(() => {
+    if (!session?.id) return;
+
+    const refreshInterval = setInterval(async () => {
+      try {
+        const freshSession = await sessionsAPI.getById(session.id);
+        
+        if (freshSession.status === 'ended' || freshSession.status === 'completed' || freshSession.status === 'cancelled') {
+          sessionStorage.removeItem('currentSession');
+          setSession(freshSession);
+          toast({
+            title: 'Session Ended',
+            description: 'This session has ended.',
+            variant: 'default',
+          });
+          setTimeout(() => {
+            navigate('/my-bookings');
+          }, 2000);
+          return;
+        }
+        
+        setSession(freshSession);
+        sessionStorage.setItem('currentSession', JSON.stringify(freshSession));
+      } catch (error: any) {
+        if (error.message?.includes('not found') || error.message?.includes('404')) {
+          sessionStorage.removeItem('currentSession');
+          toast({
+            title: 'Session Not Found',
+            description: 'This session no longer exists.',
+            variant: 'destructive',
+          });
+          setTimeout(() => {
+            navigate('/my-bookings');
+          }, 2000);
+        }
+      }
+    }, 30000);
+
+    return () => clearInterval(refreshInterval);
+  }, [session?.id, navigate, toast]);
+
   useEffect(() => {
     if (!isConnected || !session) return;
 
-    // Listen for timer updates (session extension)
     const handleTimerUpdate = (data: any) => {
       if (data.session_id === session.id) {
-        // Update session end time if extended
         if (data.new_end_time) {
           setSession(prev => prev ? { ...prev, endTime: new Date(data.new_end_time) } : null);
         }
       }
     };
 
-    // Listen for queue removal (session ended by admin)
     const handleQueueRemoved = (data: any) => {
       if (data.type === 'session' && data.sessionId === session.id) {
         handleSessionEnd();
@@ -138,24 +230,22 @@ export default function SessionTimer() {
       }
     };
 
-    // Listen for queue assignment (session activated by admin)
     const handleQueueAssigned = (data: any) => {
       if (data.type === 'session' && data.sessionId === session.id) {
         toast({
           title: 'Session Activated',
           description: data.message || 'Your session has been activated!',
         });
-        // Reload session data
         sessionsAPI.getById(session.id).then(updatedSession => {
           setSession(updatedSession);
         });
       }
     };
 
-    // Listen for session ended event
     const handleSessionEnded = (data: any) => {
       if (data.session_id === session.id) {
-        // Update session with final data
+        sessionStorage.removeItem('currentSession');
+        
         setSession(prev => prev ? {
           ...prev,
           status: 'ended',
@@ -169,24 +259,20 @@ export default function SessionTimer() {
           description: `Session ended. Final amount: ₹${data.finalAmount || session?.finalAmount || 0}`,
         });
         
-        // Navigate after a short delay
         setTimeout(() => {
           handleSessionEnd();
         }, 2000);
       }
     };
 
-    // Listen for challenge session ended event
     const handleChallengeSessionEnded = (data: any) => {
       if (data.session_id === session.id && session.isChallengeSession) {
         setWinnerDialogOpen(true);
       }
     };
 
-    // Listen for winner selection updates
     const handleWinnerSelected = (data: any) => {
       if (data.session_id === session.id) {
-        // Refresh session data
         sessionsAPI.getById(session.id).then(updatedSession => {
           setSession(updatedSession);
           if (data.winner) {
@@ -196,7 +282,6 @@ export default function SessionTimer() {
       }
     };
 
-    // Listen for session paused event
     const handleSessionPaused = (data: any) => {
       if (data.session_id === session.id) {
         setSession(prev => prev ? {
@@ -216,7 +301,6 @@ export default function SessionTimer() {
       }
     };
 
-    // Listen for session resumed event
     const handleSessionResumed = (data: any) => {
       if (data.session_id === session.id) {
         setSession(prev => prev ? {

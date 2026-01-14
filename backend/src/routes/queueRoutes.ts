@@ -12,19 +12,16 @@ import { authenticate, requireStaff } from '../middleware/auth.js';
 
 const router = Router();
 
-// Existing queue routes
 router.get('/', authenticate, getQueue);
 router.get('/stations', authenticate, getStations);
 router.get('/stats', authenticate, getQueueStats);
 router.post('/assign', authenticate, requireStaff, assignQueueEntry);
 router.post('/remove', authenticate, requireStaff, removeQueueEntry);
 
-// Approval routes
 router.get('/approvals', authenticate, requireStaff, getPendingApprovals);
 router.post('/approve', authenticate, requireStaff, approveCashPayment);
 router.post('/reject', authenticate, requireStaff, rejectCashPayment);
 
-// Waiting queue routes
 router.get('/waiting', authenticate, requireStaff, getWaitingQueue);
 router.post('/process', authenticate, requireStaff, processQueue);
 router.get('/status/:reservationId', authenticate, getQueueStatusByReservation);

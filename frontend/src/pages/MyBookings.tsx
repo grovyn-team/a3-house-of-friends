@@ -69,7 +69,7 @@ export default function MyBookings() {
           status: 'payment_confirmed',
           ...(data.sessionId && { sessionId: data.sessionId })
         });
-        loadBookings(); // Refresh to show updated status
+        loadBookings();
         toast({
           title: 'Booking Approved!',
           description: data.message || 'Your booking has been approved and session has started.',
@@ -90,7 +90,7 @@ export default function MyBookings() {
           status: data.status === 'confirmed' ? 'payment_confirmed' : data.status,
           ...(data.sessionId && { sessionId: data.sessionId })
         });
-        loadBookings(); // Refresh to show updated status
+        loadBookings();
         toast({
           title: data.status === 'confirmed' || data.status === 'payment_confirmed' ? 'Booking Confirmed!' : 'Booking Updated',
           description: data.message || 'Your booking status has been updated.',
@@ -112,11 +112,30 @@ export default function MyBookings() {
       }
     });
 
+    const cleanupSessionStarted = on('session_started', async (data: any) => {
+      if (data.session_id) {
+        try {
+          const { sessionsAPI } = await import('../lib/api');
+          const sessionData = await sessionsAPI.getById(data.session_id);
+          sessionStorage.setItem('currentSession', JSON.stringify(sessionData));
+          navigate('/session', { state: { session: sessionData } });
+          toast({
+            title: 'Session Started!',
+            description: 'Your session has started. Redirecting to timer...',
+            variant: 'default',
+          });
+        } catch (error) {
+          console.error('Error loading session:', error);
+        }
+      }
+    });
+
     return () => {
       cleanupOrder();
       cleanupBookingApproved();
       cleanupBooking();
       cleanupSession();
+      cleanupSessionStarted();
     };
   }, [isConnected, history, emit, joinRoom, on, updateBooking, toast]);
 
@@ -128,19 +147,33 @@ export default function MyBookings() {
           try {
             if (item.type === 'session' && item.sessionId) {
               const session = await sessionsAPI.getById(item.sessionId);
-              return { ...item, details: session };
+              
+              if (session.status === 'ended' || session.status === 'completed' || session.status === 'cancelled') {
+                updateBooking(item.id, { status: session.status });
+                if (sessionStorage.getItem('currentSession')) {
+                  const storedSession = JSON.parse(sessionStorage.getItem('currentSession') || '{}');
+                  if (storedSession.id === session.id) {
+                    sessionStorage.removeItem('currentSession');
+                  }
+                }
+              }
+              
+              return { ...item, details: session, status: session.status };
             } else if (item.type === 'order' && item.orderId) {
               const order = await ordersAPI.getById(item.orderId);
-              return { ...item, details: order };
+              return { ...item, details: order, status: order.status };
             }
             return item;
-          } catch (error) {
+          } catch (error: any) {
+            if (error.message?.includes('not found') || error.message?.includes('404')) {
+              return null;
+            }
             console.error(`Error loading ${item.type} ${item.id}:`, error);
             return item;
           }
         })
       );
-      setBookings(details);
+      setBookings(details.filter(Boolean));
     } catch (error) {
       console.error('Error loading bookings:', error);
     } finally {
@@ -152,36 +185,29 @@ export default function MyBookings() {
     console.log('View Details clicked for booking:', booking);
     
     try {
-      // Get the actual ID from booking object (check both item structure and details)
       const sessionId = booking.sessionId || booking.details?.id || booking.id;
       const orderId = booking.orderId || booking.details?.id || booking.id;
       
-      // Determine booking type
       const isOrder = booking.type === 'order' || booking.details?.items;
       const isSession = booking.type === 'session' || booking.type === 'activity' || booking.details?.activityId;
       
       if (isOrder && orderId) {
-        // Navigate to order confirmation with order details
         const orderData = booking.details || booking;
         console.log('Navigating to order confirmation with:', orderData);
         navigate('/order-confirmation', { state: { order: orderData } });
       } else if (isSession && sessionId) {
-        // Check if session is active
         const sessionData = booking.details || booking;
         const isActive = sessionData.status === 'active' || booking.status === 'active';
         
         if (isActive) {
-          // For active sessions, navigate to session timer
           console.log('Navigating to session timer with:', sessionData);
           sessionStorage.setItem('currentSession', JSON.stringify(sessionData));
           navigate('/session', { state: { session: sessionData } });
         } else {
-          // For inactive/ended sessions, navigate to view booking
           console.log('Navigating to view booking with id:', sessionId);
           navigate(`/view-booking?id=${sessionId}`);
         }
       } else {
-        // Fallback: navigate to view booking page
         const bookingId = booking.id || sessionId || orderId;
         console.log('Navigating to view booking (fallback) with id:', bookingId);
         navigate(`/view-booking?id=${bookingId}`);

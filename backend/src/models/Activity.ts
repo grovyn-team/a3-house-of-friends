@@ -116,8 +116,6 @@ const ActivityUnitSchema = new Schema<IActivityUnit>(
   }
 );
 
-// Indexes
-ActivitySchema.index({ type: 1 });
 ActivitySchema.index({ enabled: 1 });
 ActivityUnitSchema.index({ activityId: 1 });
 ActivityUnitSchema.index({ status: 1 });

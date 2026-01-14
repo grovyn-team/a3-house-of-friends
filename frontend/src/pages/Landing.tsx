@@ -26,10 +26,8 @@ export default function Landing() {
   const [challengeDialogOpen, setChallengeDialogOpen] = useState(false);
   const [challengeLoading, setChallengeLoading] = useState(false);
 
-  // WebSocket for real-time availability updates - connect immediately on page load
   const { on, joinRoom, isConnected, emit } = useWebSocket({ namespace: 'customer' });
 
-  // Emit visitor connection when WebSocket connects
   useEffect(() => {
     if (isConnected && emit) {
       emit('visitor_connected', {
@@ -45,13 +43,10 @@ export default function Landing() {
     loadActivities();
   }, [searchParams]);
 
-  // Listen for availability changes
   useEffect(() => {
     if (!isConnected) return;
 
-    // Join activity rooms silently (for real-time updates, but don't log)
     activities.forEach(activity => {
-      // Only join if we have activities loaded
       if (activity.id) {
         joinRoom(`activity:${activity.id}`);
       }
@@ -60,7 +55,6 @@ export default function Landing() {
     const cleanupAvailability = on('availability_changed', (data: { activity_id: string; status: string }) => {
       setActivities(prev => prev.map(activity => {
         if (activity.id === data.activity_id || activity._id === data.activity_id) {
-          // Update availability status
           return {
             ...activity,
             units: activity.units?.map((unit: any) => ({
@@ -73,7 +67,6 @@ export default function Landing() {
       }));
     });
 
-    // Listen for booking status updates
     const cleanupBooking = on('booking_status_update', (data: any) => {
       toast({
         title: data.status === 'confirmed' ? 'Booking Confirmed!' : 
@@ -83,7 +76,6 @@ export default function Landing() {
       });
     });
 
-    // Listen for order status updates
     const cleanupOrder = on('order_status_update', (data: any) => {
       toast({
         title: data.status === 'preparing' ? 'Order Being Prepared!' :
@@ -95,7 +87,6 @@ export default function Landing() {
       });
     });
 
-    // Listen for session status updates
     const cleanupSession = on('session_status_update', (data: any) => {
       toast({
         title: data.status === 'active' ? 'Session Started!' : 
@@ -105,13 +96,32 @@ export default function Landing() {
       });
     });
 
+    const cleanupSessionStarted = on('session_started', async (data: any) => {
+      if (data.session_id) {
+        try {
+          const { sessionsAPI } = await import('../lib/api');
+          const sessionData = await sessionsAPI.getById(data.session_id);
+          sessionStorage.setItem('currentSession', JSON.stringify(sessionData));
+          navigate('/session', { state: { session: sessionData } });
+          toast({
+            title: 'Session Started!',
+            description: 'Your session has started. Redirecting to timer...',
+            variant: 'default',
+          });
+        } catch (error) {
+          console.error('Error loading session:', error);
+        }
+      }
+    });
+
     return () => {
       cleanupAvailability();
       cleanupBooking();
       cleanupOrder();
       cleanupSession();
+      cleanupSessionStarted();
     };
-  }, [isConnected, activities, on, joinRoom, toast]);
+  }, [isConnected, activities, on, joinRoom, toast, navigate]);
 
   const loadActivities = async () => {
     try {

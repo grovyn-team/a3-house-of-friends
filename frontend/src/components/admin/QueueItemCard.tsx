@@ -88,10 +88,15 @@ export function QueueItemCard({ entry, onAssign, onRemove }: QueueItemCardProps)
                 <Clock className="h-3 w-3" />
                 Pending Approval
               </>
-            ) : (entry as any).reservationStatus === 'payment_confirmed' ? (
+            ) : entry.status === 'assigned' || (entry as any).sessionId ? (
               <>
                 <CheckCircle className="h-3 w-3" />
                 Assigned
+              </>
+            ) : (entry as any).reservationStatus === 'payment_confirmed' ? (
+              <>
+                <Clock className="h-3 w-3" />
+                Waiting
               </>
             ) : (
               <>
@@ -100,7 +105,7 @@ export function QueueItemCard({ entry, onAssign, onRemove }: QueueItemCardProps)
               </>
             )
           ) : (
-            entry.status === 'next' ? 'Next' : 'Waiting'
+            entry.status === 'assigned' ? 'Assigned' : entry.status === 'next' ? 'Next' : 'Waiting'
           )}
         </span>
       </div>
@@ -155,7 +160,8 @@ export function QueueItemCard({ entry, onAssign, onRemove }: QueueItemCardProps)
             onClick={onAssign}
             disabled={
               (entry.type === 'order' && (entry as any).orderStatus === 'served') ||
-              (entry.type === 'reservation' && (entry as any).reservationStatus === 'payment_confirmed')
+              (entry.type === 'reservation' && (entry.status === 'assigned' || (entry as any).sessionId)) ||
+              (entry.type === 'reservation' && (entry as any).reservationStatus === 'payment_confirmed' && entry.status === 'assigned')
             }
           >
             <CheckCircle className="h-4 w-4" />
@@ -164,10 +170,10 @@ export function QueueItemCard({ entry, onAssign, onRemove }: QueueItemCardProps)
                 (entry as any).orderStatus === 'preparing' ? 'Mark Ready' :
                 (entry as any).orderStatus === 'ready' ? 'Mark Served' :
                 'Assign'
+              : entry.type === 'reservation' && (entry.status === 'assigned' || (entry as any).sessionId)
+              ? 'Assigned'
               : entry.type === 'reservation' && (entry as any).reservationStatus === 'pending_approval'
               ? 'Approve'
-              : entry.type === 'reservation' && (entry as any).reservationStatus === 'payment_confirmed'
-              ? 'Assigned'
               : 'Assign'}
           </Button>
           <Button

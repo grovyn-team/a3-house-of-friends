@@ -388,11 +388,7 @@ const StockTransactionSchema = new Schema<IStockTransaction>(
   }
 );
 
-// Indexes
-InventoryCategorySchema.index({ type: 1 });
-InventoryItemSchema.index({ sku: 1 });
 InventoryItemSchema.index({ categoryId: 1 });
-InventoryItemSchema.index({ type: 1 });
 InventoryItemSchema.index({ status: 1 });
 InventoryItemSchema.index({ location: 1 });
 InventoryItemSchema.index({ currentStock: 1 }); // For low stock alerts

@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import { ReservationModel } from '../models/Reservation.js';
 import { SessionModel } from '../models/Session.js';
+import { WaitingQueueModel } from '../models/WaitingQueue.js';
 import { ActivityModel, ActivityUnitModel } from '../models/Activity.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { redisUtils } from '../config/redis.js';
@@ -17,7 +18,6 @@ export const createReservation = async (
   try {
     const { activityId, unitId, startTime, duration, customerName, customerPhone, qrContext } = req.body;
 
-    // Verify activity exists
     let activity;
     if (mongoose.Types.ObjectId.isValid(activityId)) {
       activity = await ActivityModel.findById(activityId);
@@ -29,7 +29,6 @@ export const createReservation = async (
       throw new AppError('Activity not found or disabled', 404);
     }
 
-    // Verify unit exists
     let unit;
     if (mongoose.Types.ObjectId.isValid(unitId)) {
       unit = await ActivityUnitModel.findById(unitId);
@@ -44,7 +43,6 @@ export const createReservation = async (
       throw new AppError('Unit not available', 400);
     }
 
-    // Calculate times
     const start = new Date(startTime || new Date());
     const end = new Date(start.getTime() + duration * 60000);
 
@@ -55,7 +53,6 @@ export const createReservation = async (
     const peak = isPeakHour(start);
     const price = calculateActivityPrice(activity, duration, peak);
 
-    // CRITICAL: Race condition prevention with Redis lock
     const lockKey = `lock:${activity._id}:${unit._id}:${start.toISOString()}`;
     const lockValue = uuidv4();
     
@@ -65,10 +62,9 @@ export const createReservation = async (
     }
 
     try {
-      // Check for conflicts in database
       const conflicts = await SessionModel.find({
         unitId: unit._id,
-        status: { $in: ['scheduled', 'active'] },
+        status: { $in: ['scheduled', 'active', 'paused'] },
         $or: [
           {
             startTime: { $lt: end },
@@ -77,7 +73,6 @@ export const createReservation = async (
         ],
       });
 
-      // Also check pending reservations
       const pendingReservations = await ReservationModel.find({
         unitId: unit._id,
         status: { $in: ['pending_payment', 'payment_confirmed'] },
@@ -94,8 +89,7 @@ export const createReservation = async (
         throw new AppError('This time slot is already booked', 409);
       }
 
-      // Create reservation
-      const expiresAt = new Date(Date.now() + 15 * 60000); // 15 minutes
+      const expiresAt = new Date(Date.now() + 15 * 60000);
       const reservation = await ReservationModel.create({
         activityId: activity._id,
         unitId: unit._id,
@@ -110,16 +104,12 @@ export const createReservation = async (
         expiresAt,
       });
 
-      // Cache reservation
       await redisUtils.setCache(`reservation:${reservation._id}`, reservation.toObject(), 900);
 
-      // Release lock
       await redisUtils.releaseLock(lockKey);
 
-      // Broadcast availability change
       broadcastAvailabilityChange(activity._id.toString(), 'pending');
 
-      // Emit booking_created event to admin
       const { getIO } = await import('../websocket/server.js');
       const io = getIO();
       io.of('/admin').emit('booking_created', {
@@ -136,7 +126,7 @@ export const createReservation = async (
 
       res.status(201).json({
         id: reservation._id.toString(),
-        activityId: activity.type, // Return type for frontend
+        activityId: activity.type,
         unitId: unit._id.toString(),
         startTime: reservation.startTime,
         endTime: reservation.endTime,
@@ -171,21 +161,19 @@ export const confirmReservation = async (
       throw new AppError('Reservation is not in pending payment or pending approval status', 400);
     }
 
-    // Update reservation
     reservation.status = 'payment_confirmed';
     reservation.paymentId = paymentId;
     reservation.confirmedAt = new Date();
     await reservation.save();
 
-    // Get activity to get activityType
-    // Extract activityId - handle both ObjectId and populated object
+    await redisUtils.delete(`reservation:${reservation._id}`);
+
     const activityIdForLookup = (reservation.activityId as any)?._id || reservation.activityId;
     const activity = await ActivityModel.findById(activityIdForLookup);
     if (!activity) {
       throw new AppError('Activity not found', 404);
     }
 
-    // Create session from reservation
     const session = await SessionModel.create({
       reservationId: reservation._id,
       activityId: activity._id,
@@ -204,13 +192,33 @@ export const confirmReservation = async (
       paymentStatus: paymentId === 'offline' ? 'offline' : 'paid',
     });
 
-    // Update unit status
     await ActivityUnitModel.findByIdAndUpdate(reservation.unitId, {
       status: 'occupied',
     });
 
-    // Broadcast events
-    const { broadcastSessionEvent } = await import('../websocket/server.js');
+    const queueEntry = await WaitingQueueModel.findOne({
+      reservationId: reservation._id,
+      status: 'waiting',
+    });
+
+    if (queueEntry) {
+      queueEntry.status = 'assigned';
+      queueEntry.assignedAt = new Date();
+      queueEntry.sessionId = session._id;
+      await queueEntry.save();
+    }
+
+    const { broadcastSessionEvent, getIO, notifyCustomerByPhone } = await import('../websocket/server.js');
+    const io = getIO();
+    if (io) {
+      notifyCustomerByPhone(reservation.customerPhone, 'session_started', {
+        session_id: session._id.toString(),
+        reservation_id: reservation._id.toString(),
+        activity_id: activity._id.toString(),
+        start_time: session.startTime.toISOString(),
+      });
+    }
+
     broadcastSessionEvent('booking_confirmed', {
       reservation_id: reservation._id.toString(),
       session_id: session._id.toString(),

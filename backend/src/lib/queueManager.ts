@@ -17,7 +17,6 @@ export const findAvailableUnit = async (activityId: string): Promise<any | null>
     return null;
   }
 
-  // Return the first available unit
   return units[0];
 };
 
@@ -35,7 +34,6 @@ export const addToWaitingQueue = async (
   paymentStatus: 'paid' | 'offline',
   qrContext?: any
 ): Promise<any> => {
-  // Get the next position in queue
   const lastQueueEntry = await WaitingQueueModel.findOne({
     activityId,
     status: 'waiting',
@@ -57,7 +55,6 @@ export const addToWaitingQueue = async (
     qrContext: qrContext || {},
   });
 
-  // Broadcast queue update
   const { getIO } = await import('../websocket/server.js');
   const io = getIO();
   if (io) {
@@ -66,7 +63,6 @@ export const addToWaitingQueue = async (
       queueEntry: queueEntry.toObject(),
     });
 
-    // Notify customer
     io.to(`customer:${customerPhone}`).emit('queue_status', {
       reservationId,
       position: nextPosition,
@@ -82,48 +78,41 @@ export const addToWaitingQueue = async (
  * Process waiting queue - assign next customer when a unit becomes available
  */
 export const processWaitingQueue = async (activityId: string): Promise<void> => {
-  // Find next customer in queue for this activity
   const nextInQueue = await WaitingQueueModel.findOne({
     activityId,
     status: 'waiting',
   }).sort({ position: 1 });
 
   if (!nextInQueue) {
-    return; // No one waiting
+    return;
   }
 
-  // Try to find an available unit
   const availableUnit = await findAvailableUnit(activityId.toString());
 
   if (!availableUnit) {
-    return; // No units available yet
+    return;
   }
 
-  // Mark queue entry as processing
   nextInQueue.status = 'processing';
   await nextInQueue.save();
 
   try {
-    // Get reservation
     const reservation = await ReservationModel.findById(nextInQueue.reservationId);
     if (!reservation) {
       throw new Error('Reservation not found');
     }
 
-    // Get activity
     const activity = await ActivityModel.findById(activityId);
     if (!activity) {
       throw new Error('Activity not found');
     }
 
-    // Update reservation
     reservation.status = 'payment_confirmed';
     reservation.unitId = availableUnit._id;
     reservation.paymentId = nextInQueue.paymentId;
     reservation.confirmedAt = new Date();
     await reservation.save();
 
-    // Create session
     const startTime = new Date();
     const endTime = new Date(startTime.getTime() + nextInQueue.durationMinutes * 60 * 1000);
 
@@ -146,21 +135,17 @@ export const processWaitingQueue = async (activityId: string): Promise<void> => 
       paymentStatus: nextInQueue.paymentStatus,
     });
 
-    // Update unit status
     await ActivityUnitModel.findByIdAndUpdate(availableUnit._id, {
       status: 'occupied',
     });
 
-    // Update queue entry
     nextInQueue.status = 'assigned';
     nextInQueue.assignedAt = new Date();
     nextInQueue.sessionId = session._id;
     await nextInQueue.save();
 
-    // Reorder remaining queue positions
     await reorderQueuePositions(activityId.toString());
 
-    // Broadcast events
     broadcastSessionEvent('booking_confirmed', {
       reservation_id: reservation._id.toString(),
       session_id: session._id.toString(),
@@ -168,7 +153,6 @@ export const processWaitingQueue = async (activityId: string): Promise<void> => 
 
     broadcastAvailabilityChange(activityId.toString(), 'occupied');
 
-    // Notify customer
     const { getIO, notifyCustomerByPhone } = await import('../websocket/server.js');
     const io = getIO();
     if (io) {
@@ -187,7 +171,6 @@ export const processWaitingQueue = async (activityId: string): Promise<void> => 
       });
     }
   } catch (error) {
-    // If assignment fails, mark queue entry back as waiting
     nextInQueue.status = 'waiting';
     await nextInQueue.save();
     throw error;
@@ -203,12 +186,10 @@ const reorderQueuePositions = async (activityId: string): Promise<void> => {
     status: 'waiting',
   }).sort({ position: 1 });
 
-  // Reassign positions sequentially
   for (let i = 0; i < waitingEntries.length; i++) {
     waitingEntries[i].position = i + 1;
     await waitingEntries[i].save();
 
-    // Notify customer of position update
     const { getIO } = await import('../websocket/server.js');
     const io = getIO();
     if (io) {
@@ -235,7 +216,6 @@ export const getQueueStatus = async (reservationId: string): Promise<any | null>
     return null;
   }
 
-  // Count how many people are ahead
   const aheadCount = await WaitingQueueModel.countDocuments({
     activityId: queueEntry.activityId,
     status: 'waiting',
@@ -246,6 +226,6 @@ export const getQueueStatus = async (reservationId: string): Promise<any | null>
     position: queueEntry.position,
     aheadCount,
     status: queueEntry.status,
-    estimatedWaitTime: aheadCount * 30, // Rough estimate: 30 minutes per person
+    estimatedWaitTime: aheadCount * 30,
   };
 };

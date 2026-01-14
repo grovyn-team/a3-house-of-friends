@@ -5,8 +5,10 @@ import crypto from 'crypto';
 import { SessionModel } from '../models/Session.js';
 import { FoodOrderModel } from '../models/Order.js';
 import { ReservationModel } from '../models/Reservation.js';
+import { WaitingQueueModel } from '../models/WaitingQueue.js';
 import { ActivityUnitModel, ActivityModel } from '../models/Activity.js';
 import { AppError } from '../middleware/errorHandler.js';
+import { redisUtils } from '../config/redis.js';
 import { broadcastSessionEvent, broadcastAvailabilityChange } from '../websocket/server.js';
 import { findAvailableUnit, addToWaitingQueue, processWaitingQueue } from '../lib/queueManager.js';
 
@@ -69,7 +71,7 @@ export const createPaymentOrder = async (
     const razorpay = getRazorpay();
 
     const options = {
-      amount: amount * 100, // Convert to paise
+      amount: amount * 100,
       currency: 'INR',
       receipt: `${type}-${entityId}-${Date.now()}`,
       notes: {
@@ -145,6 +147,8 @@ export const verifyPayment = async (
         reservation.confirmedAt = new Date();
         await reservation.save();
 
+        await redisUtils.delete(`reservation:${reservation._id}`);
+
         const activityIdForLookup = (reservation.activityId as any)?._id || reservation.activityId;
         const activity = await ActivityModel.findById(activityIdForLookup);
         if (!activity) {
@@ -173,7 +177,29 @@ export const verifyPayment = async (
           status: 'occupied',
         });
 
-        const { broadcastSessionEvent, broadcastAvailabilityChange } = await import('../websocket/server.js');
+        const queueEntry = await WaitingQueueModel.findOne({
+          reservationId: reservation._id,
+          status: 'waiting',
+        });
+
+        if (queueEntry) {
+          queueEntry.status = 'assigned';
+          queueEntry.assignedAt = new Date();
+          queueEntry.sessionId = session._id;
+          await queueEntry.save();
+        }
+
+        const { broadcastSessionEvent, broadcastAvailabilityChange, getIO, notifyCustomerByPhone } = await import('../websocket/server.js');
+        const io = getIO();
+        if (io) {
+          notifyCustomerByPhone(reservation.customerPhone, 'session_started', {
+            session_id: session._id.toString(),
+            reservation_id: reservation._id.toString(),
+            activity_id: activity._id.toString(),
+            start_time: session.startTime.toISOString(),
+          });
+        }
+
         broadcastSessionEvent('booking_confirmed', {
           reservation_id: reservation._id.toString(),
           session_id: session._id.toString(),
@@ -206,6 +232,8 @@ export const verifyPayment = async (
         reservation.paymentId = razorpay_payment_id;
         reservation.confirmedAt = new Date();
         await reservation.save();
+
+        await redisUtils.delete(`reservation:${reservation._id}`);
 
         const { getIO } = await import('../websocket/server.js');
         const io = getIO();
@@ -291,6 +319,8 @@ export const markOfflinePayment = async (
       reservation.status = 'pending_approval';
       reservation.paymentId = 'offline';
       await reservation.save();
+
+      await redisUtils.delete(`reservation:${reservation._id}`);
 
       const { getIO } = await import('../websocket/server.js');
       const io = getIO();

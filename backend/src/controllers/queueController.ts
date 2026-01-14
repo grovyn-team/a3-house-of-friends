@@ -2,8 +2,10 @@ import { Request, Response, NextFunction } from 'express';
 import { ReservationModel } from '../models/Reservation.js';
 import { SessionModel } from '../models/Session.js';
 import { FoodOrderModel } from '../models/Order.js';
+import { WaitingQueueModel } from '../models/WaitingQueue.js';
 import { ActivityModel, ActivityUnitModel } from '../models/Activity.js';
 import { AppError } from '../middleware/errorHandler.js';
+import { redisUtils } from '../config/redis.js';
 
 export const getQueue = async (
   req: Request,
@@ -21,22 +23,25 @@ export const getQueue = async (
       .sort({ createdAt: 1 });
     
     const reservationsWithoutActiveSessions = [];
+    const assignedReservations = [];
+    
     for (const reservation of pendingReservations) {
       const activeSession = await SessionModel.findOne({
         reservationId: reservation._id,
-        status: { $in: ['active', 'scheduled'] },
+        status: { $in: ['active', 'scheduled', 'paused'] },
       });
-      if (!activeSession || reservation.status === 'pending_approval') {
+      const queueEntry = await WaitingQueueModel.findOne({
+        reservationId: reservation._id,
+        status: 'assigned',
+      });
+      
+      if (activeSession || queueEntry) {
+        assignedReservations.push({ reservation, session: activeSession });
+      } else if (reservation.status === 'pending_approval' || !activeSession) {
         reservationsWithoutActiveSessions.push(reservation);
       }
     }
 
-    const activeSessions = await SessionModel.find({
-      status: { $in: ['scheduled', 'active'] },
-    })
-      .populate('activityId')
-      .populate('unitId')
-      .sort({ startTime: 1 });
 
     const pendingOrders = await FoodOrderModel.find({
       status: { $in: ['pending', 'preparing', 'ready'] },
@@ -76,27 +81,29 @@ export const getQueue = async (
       };
     });
 
-    const sessionQueue = activeSessions.map((session, index) => {
-      const activity = session.activityId as any;
-      const unit = session.unitId as any;
+    const assignedQueue = assignedReservations.map(({ reservation, session }, index) => {
+      const activity = reservation.activityId as any;
+      const unit = reservation.unitId as any;
       
-      const serviceType = mapActivityTypeToServiceType(activity?.type || session.activityType || '');
+      const serviceType = mapActivityTypeToServiceType(activity?.type || '');
       
       return {
-        id: session._id.toString(),
-        name: session.customerName,
-        phone: session.customerPhone,
+        id: reservation._id.toString(),
+        name: reservation.customerName,
+        phone: reservation.customerPhone,
         service: serviceType,
-        joinedAt: session.startTime,
-        status: session.status === 'active' ? ('serving' as const) : ('next' as const),
+        joinedAt: reservation.createdAt,
+        status: 'assigned' as const,
         position: reservationQueue.length + index + 1,
-        type: 'session',
+        type: 'reservation',
         activityName: activity?.name || 'Unknown Activity',
         unitName: unit?.name || 'Unknown Unit',
-        amount: session.baseAmount || session.amount || 0,
-        startTime: session.startTime,
-        endTime: session.endTime,
-        duration: session.durationMinutes || session.duration,
+        amount: reservation.amount,
+        expiresAt: reservation.expiresAt,
+        reservationStatus: 'payment_confirmed',
+        reservationId: reservation._id.toString(),
+        sessionId: session?._id.toString(),
+        paymentStatus: 'paid',
       };
     });
 
@@ -112,7 +119,7 @@ export const getQueue = async (
         service: 'general' as const,
         joinedAt: order.createdAt,
         status: queueStatus,
-        position: reservationQueue.length + sessionQueue.length + index + 1,
+        position: reservationQueue.length + assignedQueue.length + index + 1,
         type: 'order',
         itemCount: order.items?.length || 0,
         amount: order.totalAmount || order.amount || 0,
@@ -122,7 +129,7 @@ export const getQueue = async (
       };
     });
 
-    let allQueue = [...reservationQueue, ...sessionQueue, ...orderQueue];
+    let allQueue = [...reservationQueue, ...assignedQueue, ...orderQueue];
 
     if (service && service !== 'all') {
       allQueue = allQueue.filter(entry => entry.service === service);
@@ -293,10 +300,19 @@ export const assignQueueEntry = async (
 
       const existingSession = await SessionModel.findOne({
         reservationId: reservation._id,
-        status: { $in: ['active', 'scheduled'] },
+        status: { $in: ['active', 'scheduled', 'paused'] },
       });
 
       if (existingSession) {
+        if (existingSession.status === 'active') {
+          res.json({
+            success: true,
+            message: 'Session is already active',
+            sessionId: existingSession._id.toString(),
+            reservationId: reservation._id.toString(),
+          });
+          return;
+        }
         throw new AppError('Session is already active for this reservation', 400);
       }
 
@@ -363,6 +379,18 @@ export const assignQueueEntry = async (
         status: 'occupied',
       });
 
+      const queueEntry = await WaitingQueueModel.findOne({
+        reservationId: reservation._id,
+        status: 'waiting',
+      });
+
+      if (queueEntry) {
+        queueEntry.status = 'assigned';
+        queueEntry.assignedAt = new Date();
+        queueEntry.sessionId = session._id;
+        await queueEntry.save();
+      }
+
       result = {
         type: 'reservation',
         reservationId: reservation._id.toString(),
@@ -371,11 +399,16 @@ export const assignQueueEntry = async (
         message: 'Reservation confirmed and session started',
       };
 
-      // Broadcast to WebSocket - notify specific customer
       const { getIO, notifyCustomerByPhone, notifyCustomerById } = await import('../websocket/server.js');
       const io = getIO();
       
-      // Notify by phone and by reservation ID
+      notifyCustomerByPhone(reservation.customerPhone, 'session_started', {
+        session_id: session._id.toString(),
+        reservation_id: reservation._id.toString(),
+        activity_id: activityId.toString(),
+        start_time: session.startTime.toISOString(),
+      });
+
       notifyCustomerByPhone(reservation.customerPhone, 'booking_status_update', {
         type: 'reservation',
         reservationId: reservation._id.toString(),
@@ -474,6 +507,20 @@ export const assignQueueEntry = async (
         status: 'occupied',
       });
 
+      if (session.reservationId) {
+        const queueEntry = await WaitingQueueModel.findOne({
+          reservationId: session.reservationId,
+          status: 'waiting',
+        });
+
+        if (queueEntry) {
+          queueEntry.status = 'assigned';
+          queueEntry.assignedAt = new Date();
+          queueEntry.sessionId = session._id;
+          await queueEntry.save();
+        }
+      }
+
       result = {
         type: 'session',
         sessionId: session._id.toString(),
@@ -481,11 +528,16 @@ export const assignQueueEntry = async (
         message: 'Session activated',
       };
 
-      // Broadcast to WebSocket - notify specific customer
       const { getIO, notifyCustomerByPhone, notifyCustomerById } = await import('../websocket/server.js');
       const io = getIO();
       
-      // Notify by phone and by session ID
+      notifyCustomerByPhone(session.customerPhone, 'session_started', {
+        session_id: session._id.toString(),
+        reservation_id: session.reservationId?.toString(),
+        activity_id: session.activityId.toString(),
+        start_time: session.actualStartTime.toISOString(),
+      });
+
       notifyCustomerByPhone(session.customerPhone, 'session_status_update', {
         type: 'session',
         sessionId: session._id.toString(),
@@ -538,6 +590,8 @@ export const removeQueueEntry = async (
       reservation.status = 'cancelled';
       await reservation.save();
 
+      await redisUtils.delete(`reservation:${reservation._id}`);
+
       if (reservation.unitId) {
         const unit = await ActivityUnitModel.findById(reservation.unitId);
         if (unit && unit.status === 'reserved') {
@@ -553,11 +607,9 @@ export const removeQueueEntry = async (
         message: 'Reservation cancelled',
       };
 
-      // Broadcast to WebSocket - notify specific customer
       const { getIO, notifyCustomerByPhone, notifyCustomerById } = await import('../websocket/server.js');
       const io = getIO();
       
-      // Notify by phone and by reservation ID
       notifyCustomerByPhone(reservation.customerPhone, 'booking_status_update', {
         type: 'reservation',
         reservationId: reservation._id.toString(),
@@ -622,8 +674,13 @@ export const removeQueueEntry = async (
       }
 
       session.status = 'ended';
-      session.actualEndTime = new Date();
+      const actualEndTime = new Date();
+      session.endTime = actualEndTime;
+      session.actualEndTime = actualEndTime;
       await session.save();
+
+      const { redisUtils } = await import('../config/redis.js');
+      await redisUtils.delete(`session:${session._id}`);
 
       await ActivityUnitModel.findByIdAndUpdate(session.unitId, {
         status: 'available',
@@ -636,11 +693,9 @@ export const removeQueueEntry = async (
         message: 'Session ended',
       };
 
-      // Broadcast to WebSocket - notify specific customer
       const { getIO, notifyCustomerByPhone, notifyCustomerById } = await import('../websocket/server.js');
       const io = getIO();
       
-      // Notify by phone and by session ID
       notifyCustomerByPhone(session.customerPhone, 'session_status_update', {
         type: 'session',
         sessionId: session._id.toString(),

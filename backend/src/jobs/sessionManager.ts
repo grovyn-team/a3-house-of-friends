@@ -1,6 +1,7 @@
 import cron from 'node-cron';
 import { SessionModel } from '../models/Session.js';
 import { ReservationModel } from '../models/Reservation.js';
+import { WaitingQueueModel } from '../models/WaitingQueue.js';
 import { ActivityUnitModel } from '../models/Activity.js';
 import { redisUtils } from '../config/redis.js';
 import { broadcastTimerUpdate, broadcastSessionEvent } from '../websocket/server.js';
@@ -21,11 +22,36 @@ cron.schedule('* * * * *', async () => {
       session.actualStartTime = now;
       await session.save();
 
+      if (session.reservationId) {
+        const queueEntry = await WaitingQueueModel.findOne({
+          reservationId: session.reservationId,
+          status: 'waiting',
+        });
+
+        if (queueEntry) {
+          queueEntry.status = 'assigned';
+          queueEntry.assignedAt = now;
+          queueEntry.sessionId = session._id;
+          await queueEntry.save();
+        }
+      }
+
       await redisUtils.setSessionState(session._id.toString(), {
         status: 'active',
         started_at: now.getTime().toString(),
         elapsed_seconds: '0',
       });
+
+      const { getIO, notifyCustomerByPhone } = await import('../websocket/server.js');
+      const io = getIO();
+      if (io) {
+        notifyCustomerByPhone(session.customerPhone, 'session_started', {
+          session_id: session._id.toString(),
+          reservation_id: session.reservationId?.toString(),
+          activity_id: session.activityId.toString(),
+          start_time: now.toISOString(),
+        });
+      }
 
       broadcastSessionEvent('session_started', {
         session_id: session._id.toString(),
@@ -50,6 +76,7 @@ cron.schedule('*/30 * * * * *', async () => {
 
     for (const session of sessionsToEnd) {
       session.status = 'completed';
+      session.endTime = now;
       session.actualEndTime = now;
       await session.save();
 
@@ -59,7 +86,6 @@ cron.schedule('*/30 * * * * *', async () => {
         status: 'available',
       });
 
-      // Process waiting queue for this activity
       try {
         await processWaitingQueue(session.activityId.toString());
       } catch (error) {
@@ -81,7 +107,6 @@ cron.schedule('*/30 * * * * *', async () => {
 
 cron.schedule('*/10 * * * * *', async () => {
   try {
-    // Include both active and paused sessions
     const activeSessions = await SessionModel.find({
       status: { $in: ['active', 'paused'] },
       actualStartTime: { $exists: true },
@@ -143,6 +168,8 @@ cron.schedule('* * * * *', async () => {
       });
 
       for (const reservation of expiredReservations) {
+        await redisUtils.delete(`reservation:${reservation._id}`);
+        
         const { broadcastAvailabilityChange } = await import('../websocket/server.js');
         broadcastAvailabilityChange(reservation.activityId.toString(), 'available');
       }
@@ -170,6 +197,36 @@ cron.schedule('* * * * *', async () => {
     }
   } catch (error) {
     console.error('Error sending warnings:', error);
+  }
+});
+
+cron.schedule('*/5 * * * *', async () => {
+  try {
+    const now = new Date();
+    
+    const expiredReservations = await ReservationModel.find({
+      status: { $in: ['expired', 'cancelled', 'payment_confirmed'] },
+      updatedAt: { $lt: new Date(now.getTime() - 60 * 60000) },
+    }).limit(100);
+
+    for (const reservation of expiredReservations) {
+      await redisUtils.delete(`reservation:${reservation._id}`);
+    }
+
+    const endedSessions = await SessionModel.find({
+      status: { $in: ['ended', 'completed', 'cancelled'] },
+      updatedAt: { $lt: new Date(now.getTime() - 60 * 60000) },
+    }).limit(100);
+
+    for (const session of endedSessions) {
+      await redisUtils.delete(`session:${session._id}`);
+    }
+
+    if (expiredReservations.length > 0 || endedSessions.length > 0) {
+      console.log(`✅ Cleaned up ${expiredReservations.length} reservation caches and ${endedSessions.length} session states`);
+    }
+  } catch (error) {
+    console.error('Error cleaning up orphaned Redis keys:', error);
   }
 });
 

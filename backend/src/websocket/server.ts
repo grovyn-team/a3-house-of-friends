@@ -15,20 +15,16 @@ export const initializeWebSocket = (server: HTTPServer): SocketIOServer => {
     transports: ['websocket', 'polling'],
   });
 
-  // Redis adapter for horizontal scaling
   const pubClient = getRedis().duplicate();
   const subClient = getRedis().duplicate();
   io.adapter(createAdapter(pubClient, subClient));
 
-  // Customer namespace
   const customerNS = io.of('/customer');
   setupCustomerNamespace(customerNS);
 
-  // Admin namespace
   const adminNS = io.of('/admin');
   setupAdminNamespace(adminNS);
 
-  // Staff namespace
   const staffNS = io.of('/staff');
   setupStaffNamespace(staffNS);
 
@@ -36,19 +32,16 @@ export const initializeWebSocket = (server: HTTPServer): SocketIOServer => {
   return io;
 };
 
-// Store customer phone -> socket mapping for targeted notifications
-const customerSocketMap = new Map<string, Set<string>>(); // phone -> Set of socket IDs
+const customerSocketMap = new Map<string, Set<string>>();
 
 function setupCustomerNamespace(namespace: SocketIOServer) {
   namespace.use(async (socket, next) => {
-    // Optional: Validate QR token
     const { token } = socket.handshake.auth;
     if (token) {
       try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret') as any;
         socket.data.qrContext = decoded;
       } catch (error) {
-        // Invalid token, but allow connection (read-only)
       }
     }
     next();
@@ -57,16 +50,14 @@ function setupCustomerNamespace(namespace: SocketIOServer) {
   namespace.on('connection', (socket) => {
     console.log('Customer connected:', socket.id);
 
-    // Notify admin of new visitor
     io.of('/admin').emit('visitor_connected', {
       socketId: socket.id,
       timestamp: new Date().toISOString(),
     });
 
-    // Register customer phone number for targeted notifications
     socket.on('register_customer', ({ phone }) => {
       if (phone) {
-        const normalizedPhone = phone.replace(/\D/g, ''); // Remove non-digits
+        const normalizedPhone = phone.replace(/\D/g, '');
         if (!customerSocketMap.has(normalizedPhone)) {
           customerSocketMap.set(normalizedPhone, new Set());
         }
@@ -76,34 +67,28 @@ function setupCustomerNamespace(namespace: SocketIOServer) {
       }
     });
 
-    // Join activity room for availability updates
     socket.on('join_activity', ({ activity_id }) => {
       socket.join(`activity:${activity_id}`);
-      // Only log in development mode to reduce console noise
       if (process.env.NODE_ENV === 'development') {
         console.log(`Customer ${socket.id} joined activity:${activity_id}`);
       }
     });
 
-    // Join session room for timer updates
     socket.on('join_session', ({ session_id }) => {
       socket.join(`session:${session_id}`);
       console.log(`Customer ${socket.id} joined session:${session_id}`);
     });
 
-    // Join order room for order updates
     socket.on('join_order', ({ order_id }) => {
       socket.join(`order:${order_id}`);
       console.log(`Customer ${socket.id} joined order:${order_id}`);
     });
 
-    // Join reservation room for reservation updates
     socket.on('join_reservation', ({ reservation_id }) => {
       socket.join(`reservation:${reservation_id}`);
       console.log(`Customer ${socket.id} joined reservation:${reservation_id}`);
     });
 
-    // Handle visitor connection event
     socket.on('visitor_connected', (data) => {
       io.of('/admin').emit('visitor_connected', {
         ...data,
@@ -111,7 +96,6 @@ function setupCustomerNamespace(namespace: SocketIOServer) {
       });
     });
 
-    // Handle booking created event
     socket.on('booking_created', (data) => {
       io.of('/admin').emit('booking_created', {
         ...data,
@@ -119,7 +103,6 @@ function setupCustomerNamespace(namespace: SocketIOServer) {
       });
     });
 
-    // Handle order created event
     socket.on('order_created', (data) => {
       io.of('/admin').emit('order_created', {
         ...data,
@@ -127,7 +110,6 @@ function setupCustomerNamespace(namespace: SocketIOServer) {
       });
     });
 
-    // Handle payment completed event
     socket.on('payment_completed', (data) => {
       io.of('/admin').emit('payment_completed', {
         ...data,
@@ -135,7 +117,6 @@ function setupCustomerNamespace(namespace: SocketIOServer) {
       });
     });
 
-    // Heartbeat
     socket.on('ping', ({ session_id, timestamp }) => {
       socket.emit('pong', { timestamp: Date.now() });
     });
@@ -143,7 +124,6 @@ function setupCustomerNamespace(namespace: SocketIOServer) {
     socket.on('disconnect', () => {
       console.log('Customer disconnected:', socket.id);
       
-      // Remove from customer phone mapping
       if (socket.data.customerPhone) {
         const phoneSet = customerSocketMap.get(socket.data.customerPhone);
         if (phoneSet) {
@@ -162,7 +142,6 @@ function setupCustomerNamespace(namespace: SocketIOServer) {
   });
 }
 
-// Helper function to send notification to specific customer by phone
 export function notifyCustomerByPhone(phone: string, event: string, data: any) {
   if (!io) return;
   
@@ -179,7 +158,6 @@ export function notifyCustomerByPhone(phone: string, event: string, data: any) {
   }
 }
 
-// Helper function to send notification to specific customer by booking/order ID
 export function notifyCustomerById(id: string, type: 'reservation' | 'order' | 'session', event: string, data: any) {
   if (!io) return;
   
@@ -211,19 +189,15 @@ function setupAdminNamespace(namespace: SocketIOServer) {
   namespace.on('connection', (socket) => {
     console.log('Admin connected:', socket.id, socket.data.admin?.username);
 
-    // Join branch room
     if (socket.data.admin?.branchId) {
       socket.join(`branch:${socket.data.admin.branchId}`);
     } else {
-      socket.join('branch:all'); // Super admin
+      socket.join('branch:all');
     }
 
-    // Admin commands
     socket.on('force_end_session', async ({ session_id, reason }) => {
       try {
-        // Import here to avoid circular dependency
         const { endSession } = await import('../controllers/sessionController.js');
-        // This would need to be adapted to work with socket context
         socket.emit('command_success', { action: 'force_end_session', session_id });
       } catch (error: any) {
         socket.emit('command_error', { action: 'force_end_session', error: error.message });
@@ -256,7 +230,6 @@ function setupStaffNamespace(namespace: SocketIOServer) {
   namespace.on('connection', (socket) => {
     console.log('Staff connected:', socket.id);
 
-    // Join branch room
     if (socket.data.staff?.branchId) {
       socket.join(`branch:${socket.data.staff.branchId}`);
     }
@@ -267,7 +240,6 @@ function setupStaffNamespace(namespace: SocketIOServer) {
   });
 }
 
-// Broadcast helper functions
 export function broadcastAvailabilityChange(activityId: string, status: string) {
   if (!io) return;
   io.of('/customer').to(`activity:${activityId}`).emit('availability_changed', {
@@ -287,10 +259,8 @@ export function broadcastTimerUpdate(sessionId: string, elapsed: number, remaini
     timestamp: Date.now(),
   };
 
-  // To customer
   io.of('/customer').to(`session:${sessionId}`).emit('timer_update', data);
   
-  // To admin
   io.of('/admin').emit('timer_update', data);
 }
 
@@ -306,10 +276,8 @@ export function broadcastFoodOrder(order: any) {
   
   const branchId = order.qrContext?.branchId || 'all';
   
-  // To staff
   io.of('/staff').to(`branch:${branchId}`).emit('food_order_received', order);
   
-  // To admin
   io.of('/admin').to(`branch:${branchId}`).emit('food_order_received', order);
 }
 

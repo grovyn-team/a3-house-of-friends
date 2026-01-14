@@ -4,6 +4,7 @@ import { WaitingQueueModel } from '../models/WaitingQueue.js';
 import { ActivityModel, ActivityUnitModel } from '../models/Activity.js';
 import { SessionModel } from '../models/Session.js';
 import { AppError } from '../middleware/errorHandler.js';
+import { redisUtils } from '../config/redis.js';
 import { findAvailableUnit, processWaitingQueue, getQueueStatus } from '../lib/queueManager.js';
 import { broadcastSessionEvent, broadcastAvailabilityChange } from '../websocket/server.js';
 
@@ -58,6 +59,21 @@ export const approveCashPayment = async (
       throw new AppError('Reservation not found', 404);
     }
 
+    const existingSession = await SessionModel.findOne({
+      reservationId: reservation._id,
+      status: { $in: ['active', 'scheduled', 'paused'] },
+    });
+
+    if (existingSession) {
+      res.json({
+        success: true,
+        message: 'Reservation already approved and session is active',
+        reservationId: reservation._id.toString(),
+        sessionId: existingSession._id.toString(),
+      });
+      return;
+    }
+
     if (reservation.status !== 'pending_approval') {
       throw new AppError('Reservation is not pending approval', 400);
     }
@@ -89,6 +105,8 @@ export const approveCashPayment = async (
     reservation.paymentId = 'offline';
     reservation.confirmedAt = new Date();
     await reservation.save();
+
+    await redisUtils.delete(`reservation:${reservation._id}`);
 
     let activity: any;
     let activityId: any;
@@ -146,6 +164,24 @@ export const approveCashPayment = async (
       status: 'occupied',
     });
 
+    const queueEntry = await WaitingQueueModel.findOne({
+      reservationId: reservation._id,
+      status: 'waiting',
+    });
+
+    if (queueEntry) {
+      queueEntry.status = 'assigned';
+      queueEntry.assignedAt = new Date();
+      queueEntry.sessionId = session._id;
+      await queueEntry.save();
+    }
+
+    await redisUtils.setSessionState(session._id.toString(), {
+      status: 'active',
+      started_at: startTime.getTime().toString(),
+      elapsed_seconds: '0',
+    });
+
     broadcastSessionEvent('booking_confirmed', {
       reservation_id: reservation._id.toString(),
       session_id: session._id.toString(),
@@ -156,6 +192,13 @@ export const approveCashPayment = async (
     const { getIO, notifyCustomerByPhone } = await import('../websocket/server.js');
     const io = getIO();
     if (io) {
+      notifyCustomerByPhone(reservation.customerPhone, 'session_started', {
+        session_id: session._id.toString(),
+        reservation_id: reservation._id.toString(),
+        activity_id: activityId.toString(),
+        start_time: startTime.toISOString(),
+      });
+
       notifyCustomerByPhone(reservation.customerPhone, 'booking_approved', {
         reservationId: reservation._id.toString(),
         sessionId: session._id.toString(),
@@ -221,6 +264,8 @@ export const rejectCashPayment = async (
 
     reservation.status = 'cancelled';
     await reservation.save();
+
+    await redisUtils.delete(`reservation:${reservation._id}`);
 
     const { getIO, notifyCustomerByPhone } = await import('../websocket/server.js');
     const io = getIO();

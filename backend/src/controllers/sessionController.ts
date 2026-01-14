@@ -14,8 +14,6 @@ export const createSession = async (
   try {
     const { activityId, unitId, customerName, customerPhone, duration, qrContext } = req.body;
 
-    // Verify activity exists and is enabled
-    // Handle both ObjectId and type string (e.g., "snooker-standard")
     let activity;
     if (mongoose.Types.ObjectId.isValid(activityId)) {
       activity = await ActivityModel.findById(activityId);
@@ -30,13 +28,10 @@ export const createSession = async (
       throw new AppError('Activity is currently disabled', 400);
     }
 
-    // Verify unit exists and is available
-    // Handle both ObjectId and name-based lookup
     let unit;
     if (mongoose.Types.ObjectId.isValid(unitId)) {
       unit = await ActivityUnitModel.findById(unitId);
     } else {
-      // If unitId is a name, find by name and activityId
       unit = await ActivityUnitModel.findOne({
         name: unitId,
         activityId: activity._id,
@@ -50,7 +45,6 @@ export const createSession = async (
       throw new AppError('Unit is not available', 400);
     }
 
-    // Check for minimum duration
     if (duration < activity.minimumDuration) {
       throw new AppError(
         `Minimum duration is ${activity.minimumDuration} minutes`,
@@ -58,18 +52,16 @@ export const createSession = async (
       );
     }
 
-    // Calculate price
     const peak = isPeakHour();
     const amount = calculateActivityPrice(activity, duration, peak);
 
-    // Create session
     const startTime = new Date();
     const endTime = new Date(startTime.getTime() + duration * 60 * 1000);
 
     const session = await SessionModel.create({
-      activityId: activity._id, // Use MongoDB _id
+      activityId: activity._id,
       activityType: activity.type,
-      unitId: unit._id, // Use MongoDB _id
+      unitId: unit._id,
       customerName,
       customerPhone,
       startTime,
@@ -79,12 +71,11 @@ export const createSession = async (
       qrContext: qrContext || {},
     });
 
-    // Mark unit as occupied
     await ActivityUnitModel.findByIdAndUpdate(unit._id, { status: 'occupied' });
 
     res.status(201).json({
       id: session._id.toString(),
-      activityId: activity.type, // Return type string for frontend compatibility
+      activityId: activity.type,
       activityType: session.activityType,
       unitId: session.unitId.toString(),
       customerName: session.customerName,
@@ -92,7 +83,7 @@ export const createSession = async (
       startTime: session.startTime,
       endTime: session.endTime,
       duration: session.duration,
-      totalAmount: session.amount, // Use totalAmount for consistency
+      totalAmount: session.amount,
       amount: session.amount,
       paymentStatus: session.paymentStatus,
       paymentId: session.paymentId,
@@ -123,7 +114,7 @@ export const getSession = async (
     
     res.json({
       id: session._id.toString(),
-      activityId: activity?.type || session.activityType, // Return type string for frontend
+      activityId: activity?.type || session.activityType,
       activityType: session.activityType,
       unitId: session.unitId.toString(),
       customerName: session.customerName,
@@ -155,40 +146,43 @@ export const getActiveSessions = async (
 ): Promise<void> => {
   try {
     const limit = parseInt(req.query.limit as string) || 100;
-    // Include both active and paused sessions
-    const sessions = await SessionModel.find({ status: { $in: ['active', 'paused'] } })
+    const sessions = await SessionModel.find({ status: { $in: ['active', 'paused', 'scheduled'] } })
+      .populate('activityId')
+      .populate('unitId')
       .sort({ startTime: -1 })
       .limit(limit);
 
-    // Get activities for all sessions to map activityId to type
-    const activityIds = [...new Set(sessions.map(s => s.activityId.toString()))];
-    const activities = await ActivityModel.find({
-      _id: { $in: activityIds.map(id => new mongoose.Types.ObjectId(id)) },
-    });
-    const activityMap = new Map(activities.map(a => [a._id.toString(), a.type]));
-
-    res.json(sessions.map(s => ({
-      id: s._id.toString(),
-      activityId: activityMap.get(s.activityId.toString()) || s.activityType, // Return type string
-      activityType: s.activityType,
-      unitId: s.unitId.toString(),
-      customerName: s.customerName,
-      customerPhone: s.customerPhone,
-      startTime: s.startTime,
-      endTime: s.endTime,
-      duration: s.duration,
-      totalAmount: s.amount,
-      amount: s.amount,
-      paymentStatus: s.paymentStatus,
-      paymentId: s.paymentId,
-      razorpayOrderId: s.razorpayOrderId,
-      qrContext: s.qrContext,
-      status: s.status,
-      extended: s.extended,
-      pauseHistory: s.pauseHistory || [],
-      totalPausedDuration: s.totalPausedDuration || 0,
-      currentPauseStart: s.currentPauseStart,
-    })));
+    res.json(sessions.map(s => {
+      const activity = s.activityId as any;
+      const unit = s.unitId as any;
+      
+      return {
+        id: s._id.toString(),
+        activityId: activity?.type || activity?._id?.toString() || s.activityType,
+        activityType: s.activityType,
+        activityName: activity?.name,
+        unitId: unit?._id?.toString() || s.unitId.toString(),
+        unitName: unit?.name,
+        customerName: s.customerName,
+        customerPhone: s.customerPhone,
+        startTime: s.startTime,
+        endTime: s.endTime,
+        actualStartTime: s.actualStartTime,
+        duration: s.durationMinutes || s.duration,
+        totalAmount: s.amount,
+        amount: s.amount,
+        paymentStatus: s.paymentStatus,
+        paymentId: s.paymentId,
+        razorpayOrderId: s.razorpayOrderId,
+        qrContext: s.qrContext,
+        status: s.status,
+        extended: s.extended,
+        pauseHistory: s.pauseHistory || [],
+        totalPausedDuration: s.totalPausedDuration || 0,
+        currentPauseStart: s.currentPauseStart,
+        reservationId: s.reservationId?.toString(),
+      };
+    }));
   } catch (error) {
     next(error);
   }
@@ -202,14 +196,12 @@ export const getAllSessions = async (
   try {
     const limit = parseInt(req.query.limit as string) || 100;
     const offset = parseInt(req.query.offset as string) || 0;
-    const status = req.query.status as string; // Optional status filter
+    const status = req.query.status as string;
     
-    // Build query
     const query: any = {};
     if (status) {
       query.status = status;
     } else {
-      // Exclude scheduled and cancelled by default for history
       query.status = { $nin: ['scheduled', 'cancelled'] };
     }
 
@@ -218,7 +210,6 @@ export const getAllSessions = async (
       .limit(limit)
       .skip(offset);
 
-    // Get activities for all sessions to map activityId to type
     const activityIds = [...new Set(sessions.map(s => s.activityId.toString()))];
     const activities = await ActivityModel.find({
       _id: { $in: activityIds.map(id => new mongoose.Types.ObjectId(id)) },
@@ -286,7 +277,6 @@ export const extendSession = async (
       throw new AppError('Session is not active', 400);
     }
 
-    // Calculate additional cost
     const activity = await ActivityModel.findById(session.activityId);
     if (!activity) {
       throw new AppError('Activity not found', 404);
@@ -295,7 +285,6 @@ export const extendSession = async (
     const peak = isPeakHour();
     const additionalAmount = calculateActivityPrice(activity, additionalMinutes, peak);
 
-    // Extend session
     const newEndTime = new Date(session.endTime.getTime() + additionalMinutes * 60 * 1000);
     const newDuration = session.duration + additionalMinutes;
 
@@ -338,13 +327,10 @@ export const endSession = async (
       throw new AppError('Session not found', 404);
     }
 
-    // For challenge sessions, don't end immediately - wait for winner selection
     if (session.isChallengeSession && session.challengeData && !session.challengeData.winner) {
-      // Just mark as ended but keep session active for winner selection
       session.status = 'ended';
       await session.save();
       
-      // Emit event to prompt winner selection
       const { getIO } = await import('../websocket/server.js');
       const io = getIO();
       if (io) {
@@ -367,7 +353,6 @@ export const endSession = async (
       return;
     }
 
-    // Close any active pause before ending
     let finalTotalPausedDuration = session.totalPausedDuration || 0;
     if (session.currentPauseStart && session.status === 'paused') {
       const pauseEnd = new Date();
@@ -376,7 +361,6 @@ export const endSession = async (
       );
       finalTotalPausedDuration += pauseDuration;
 
-      // Update last pause entry
       if (session.pauseHistory && session.pauseHistory.length > 0) {
         const lastPause = session.pauseHistory[session.pauseHistory.length - 1];
         lastPause.endTime = pauseEnd;
@@ -384,7 +368,6 @@ export const endSession = async (
       }
     }
 
-    // Calculate actual usage time (excluding paused time)
     const actualEndTime = new Date();
     const actualStartTime = session.actualStartTime || session.startTime;
     const totalElapsedMinutes = Math.round(
@@ -392,32 +375,25 @@ export const endSession = async (
     );
     const actualUsageMinutes = totalElapsedMinutes - finalTotalPausedDuration;
 
-    // Recalculate final amount based on actual usage time
-    // For challenge sessions, keep the total amount (all players included)
     let finalAmount = session.amount || 0;
 
     if (!session.isChallengeSession) {
-      // Only recalculate for non-challenge sessions
       const activity = await ActivityModel.findById(session.activityId);
       
       if (activity && actualUsageMinutes < session.duration) {
-        // If actual usage is less than booked duration, recalculate
-        // Use the session start time to determine peak hour, not current time
         const peak = isPeakHour(actualStartTime);
         finalAmount = calculateActivityPrice(activity, actualUsageMinutes, peak);
       } else {
-        // Use original amount if usage is equal or more
         finalAmount = session.amount || 0;
       }
     }
-    // For challenge sessions, finalAmount is already set to total (all players)
 
-    // End session
     const endedSession = await SessionModel.findByIdAndUpdate(
       id,
       {
         $set: {
           status: 'ended',
+          endTime: actualEndTime,
           actualEndTime: actualEndTime,
           finalAmount: finalAmount,
           totalPausedDuration: finalTotalPausedDuration,
@@ -427,18 +403,17 @@ export const endSession = async (
       { new: true }
     );
 
-    // Mark unit as available
     await ActivityUnitModel.findByIdAndUpdate(session.unitId, { status: 'available' });
 
-    // Process waiting queue for this activity
+    const { redisUtils } = await import('../config/redis.js');
+    await redisUtils.delete(`session:${id}`);
+
     try {
       await processWaitingQueue(session.activityId.toString());
     } catch (error) {
       console.error('Error processing waiting queue:', error);
-      // Don't fail the session end if queue processing fails
     }
 
-    // Emit WebSocket events to both customer and admin
     const { getIO, notifyCustomerById } = await import('../websocket/server.js');
     const io = getIO();
     if (io) {
@@ -453,10 +428,8 @@ export const endSession = async (
         message: 'Session ended successfully',
       };
 
-      // Notify customer
       notifyCustomerById(id, 'session', 'session_ended', sessionData);
 
-      // Notify admin
       io.of('/admin').emit('session_ended', sessionData);
     }
 
@@ -522,7 +495,6 @@ export const createChallengeSession = async (
       throw new AppError('Duration must be between 15 minutes and 8 hours', 400);
     }
 
-    // Verify activity exists
     let activity;
     if (mongoose.Types.ObjectId.isValid(activityId)) {
       activity = await ActivityModel.findById(activityId);
@@ -534,7 +506,6 @@ export const createChallengeSession = async (
       throw new AppError('Activity not found', 404);
     }
 
-    // Find an available unit
     const availableUnit = await ActivityUnitModel.findOne({
       activityId: activity._id,
       status: 'available',
@@ -544,16 +515,13 @@ export const createChallengeSession = async (
       throw new AppError('No available units for this activity', 400);
     }
 
-    // Calculate total amount (for all players)
     const peak = isPeakHour();
     const amountPerPlayer = calculateActivityPrice(activity, duration, peak);
     const totalAmount = amountPerPlayer * players.length;
 
-    // Create start and end times
     const startTime = new Date();
     const endTime = new Date(startTime.getTime() + duration * 60 * 1000);
 
-    // Create challenge session
     const session = new SessionModel({
       activityId: activity._id,
       activityType: activityType,
@@ -587,10 +555,8 @@ export const createChallengeSession = async (
 
     await session.save();
 
-    // Mark unit as occupied
     await ActivityUnitModel.findByIdAndUpdate(availableUnit._id, { status: 'occupied' });
 
-    // Emit WebSocket event
     const { getIO, notifyCustomerById } = await import('../websocket/server.js');
     const io = getIO();
     if (io) {
@@ -640,7 +606,6 @@ export const voteWinner = async (
       throw new AppError('Session must be ended before voting', 400);
     }
 
-    // Update voter's vote
     const challengeData = session.challengeData;
     const playerIndex = challengeData.players.findIndex((p: any) => p.name === voterName);
     
@@ -651,11 +616,9 @@ export const voteWinner = async (
     challengeData.players[playerIndex].hasVoted = true;
     challengeData.players[playerIndex].voteFor = winnerName;
 
-    // Check if all players have voted
     const allVoted = challengeData.players.every((p: any) => p.hasVoted);
     
     if (allVoted) {
-      // Count votes
       const voteCounts: Record<string, number> = {};
       challengeData.players.forEach((p: any) => {
         if (p.voteFor) {
@@ -663,7 +626,6 @@ export const voteWinner = async (
         }
       });
 
-      // Find winner (player with most votes)
       let maxVotes = 0;
       let winner = '';
       Object.entries(voteCounts).forEach(([name, votes]) => {
@@ -678,7 +640,6 @@ export const voteWinner = async (
         challengeData.winnerSelectedBy = 'players';
         challengeData.winnerSelectedAt = new Date();
 
-        // Mark winner in players array
         challengeData.players.forEach((p: any) => {
           p.isWinner = p.name === winner;
         });
@@ -688,7 +649,6 @@ export const voteWinner = async (
     session.challengeData = challengeData;
     await session.save();
 
-    // Emit WebSocket event
     const { getIO } = await import('../websocket/server.js');
     const io = getIO();
     if (io) {
@@ -742,7 +702,6 @@ export const selectWinner = async (
       throw new AppError('Session must be ended before selecting winner', 400);
     }
 
-    // Verify winner is in players list
     const challengeData = session.challengeData;
     const winnerExists = challengeData.players.some((p: any) => p.name === winnerName);
     
@@ -750,12 +709,10 @@ export const selectWinner = async (
       throw new AppError('Winner not found in players list', 400);
     }
 
-    // Set winner
     challengeData.winner = winnerName;
     challengeData.winnerSelectedBy = selectedBy;
     challengeData.winnerSelectedAt = new Date();
 
-    // Update players array
     challengeData.players.forEach((p: any) => {
       p.isWinner = p.name === winnerName;
     });
@@ -763,7 +720,6 @@ export const selectWinner = async (
     session.challengeData = challengeData;
     await session.save();
 
-    // Emit WebSocket event
     const { getIO } = await import('../websocket/server.js');
     const io = getIO();
     if (io) {
@@ -812,12 +768,10 @@ export const pauseSession = async (
       throw new AppError('Session is already paused', 400);
     }
 
-    // Start pause
     const pauseStart = new Date();
     session.currentPauseStart = pauseStart;
     session.status = 'paused';
     
-    // Add to pause history
     if (!session.pauseHistory) {
       session.pauseHistory = [];
     }
@@ -829,7 +783,6 @@ export const pauseSession = async (
 
     const updatedSession = await session.save();
 
-    // Emit WebSocket event for real-time updates
     const { getIO, notifyCustomerById } = await import('../websocket/server.js');
     notifyCustomerById(id, 'session', 'session_paused', {
       session_id: id,
@@ -841,7 +794,6 @@ export const pauseSession = async (
       timestamp: new Date().toISOString(),
     });
 
-    // Also notify admin namespace
     const io = getIO();
     if (io) {
       io.of('/admin').emit('session_paused', {
@@ -888,13 +840,11 @@ export const resumeSession = async (
       throw new AppError('No active pause found', 400);
     }
 
-    // Calculate pause duration
     const pauseEnd = new Date();
     const pauseDuration = Math.round(
-      (pauseEnd.getTime() - session.currentPauseStart.getTime()) / (1000 * 60)
+      (pauseEnd.getTime() - session.currentPauseStart.getTime())       / (1000 * 60)
     );
 
-    // Update pause history entry
     const lastPauseIndex = session.pauseHistory.length - 1;
     if (lastPauseIndex >= 0) {
       session.pauseHistory[lastPauseIndex].endTime = pauseEnd;
@@ -904,20 +854,16 @@ export const resumeSession = async (
       }
     }
 
-    // Update total paused duration
     session.totalPausedDuration = (session.totalPausedDuration || 0) + pauseDuration;
 
-    // Extend end time by paused duration to account for the break
     const newEndTime = new Date(session.endTime.getTime() + pauseDuration * 60 * 1000);
     
-    // Resume session
     session.status = 'active';
     session.currentPauseStart = undefined;
     session.endTime = newEndTime;
 
     const updatedSession = await session.save();
 
-    // Emit WebSocket event for real-time updates
     const { getIO, notifyCustomerById } = await import('../websocket/server.js');
     notifyCustomerById(id, 'session', 'session_resumed', {
       session_id: id,
@@ -930,7 +876,6 @@ export const resumeSession = async (
       timestamp: new Date().toISOString(),
     });
 
-    // Also notify admin namespace
     const io = getIO();
     if (io) {
       io.of('/admin').emit('session_resumed', {
@@ -944,7 +889,6 @@ export const resumeSession = async (
         timestamp: new Date().toISOString(),
       });
 
-      // Broadcast timer update with new end time
       const remaining = Math.max(0, Math.floor((updatedSession.endTime.getTime() - Date.now()) / 1000));
       const elapsed = Math.floor((Date.now() - new Date(updatedSession.startTime).getTime()) / 1000) - (updatedSession.totalPausedDuration * 60);
       io.of('/customer').to(`session:${id}`).emit('timer_update', {
@@ -981,10 +925,11 @@ export const deleteSession = async (
       throw new AppError('Session not found', 404);
     }
 
-    // Delete the session
     await SessionModel.findByIdAndDelete(id);
 
-    // Emit WebSocket event for real-time updates
+    const { redisUtils } = await import('../config/redis.js');
+    await redisUtils.delete(`session:${id}`);
+
     const { getIO } = await import('../websocket/server.js');
     const io = getIO();
     if (io) {

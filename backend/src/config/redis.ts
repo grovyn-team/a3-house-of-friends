@@ -46,9 +46,7 @@ export const getRedis = (): Redis => {
   return redis;
 };
 
-// Redis utilities
 export const redisUtils = {
-  // Distributed lock
   acquireLock: async (key: string, value: string, ttlSeconds = 10): Promise<boolean> => {
     const client = getRedis();
     const result = await client.set(key, value, 'EX', ttlSeconds, 'NX');
@@ -60,7 +58,6 @@ export const redisUtils = {
     await client.del(key);
   },
 
-  // Cache with TTL
   setCache: async (key: string, value: any, ttlSeconds = 300): Promise<void> => {
     const client = getRedis();
     await client.setex(key, ttlSeconds, JSON.stringify(value));
@@ -72,7 +69,6 @@ export const redisUtils = {
     return value ? JSON.parse(value) : null;
   },
 
-  // Session state
   setSessionState: async (sessionId: string, state: Record<string, any>): Promise<void> => {
     const client = getRedis();
     await client.hset(`session:${sessionId}`, state);
@@ -85,13 +81,11 @@ export const redisUtils = {
     return Object.keys(state).length > 0 ? state : null;
   },
 
-  // Pub/Sub
   publish: async (channel: string, message: any): Promise<void> => {
     const client = getRedis();
     await client.publish(channel, JSON.stringify(message));
   },
 
-  // Delete key
   delete: async (key: string): Promise<void> => {
     const client = getRedis();
     await client.del(key);

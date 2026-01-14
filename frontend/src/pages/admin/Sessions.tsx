@@ -39,20 +39,17 @@ export default function AdminSessions() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [timerData, setTimerData] = useState<Record<string, { elapsed: number; remaining: number }>>({});
 
-  // WebSocket for real-time updates
   const { on, isConnected } = useWebSocket({ namespace: 'admin' });
 
   useEffect(() => {
     loadSessions();
-    const interval = setInterval(loadSessions, 10000); // Refresh every 10 seconds
+    const interval = setInterval(loadSessions, 10000);
     return () => clearInterval(interval);
   }, []);
 
-  // Listen for WebSocket events for real-time session updates
   useEffect(() => {
     if (!isConnected) return;
 
-    // Listen for session paused event
     const handleSessionPaused = (data: any) => {
       setSessions(prevSessions => 
         prevSessions.map(s => {
@@ -69,7 +66,6 @@ export default function AdminSessions() {
       );
     };
 
-    // Listen for session resumed event
     const handleSessionResumed = (data: any) => {
       setSessions(prevSessions => 
         prevSessions.map(s => {
@@ -92,9 +88,7 @@ export default function AdminSessions() {
       );
     };
 
-    // Listen for timer updates (real-time timer sync)
     const handleTimerUpdate = (data: any) => {
-      // Update timer data for real-time display
       setTimerData(prev => ({
         ...prev,
         [data.session_id]: {
@@ -103,7 +97,6 @@ export default function AdminSessions() {
         },
       }));
 
-      // Update session end time if changed
       if (data.new_end_time) {
         setSessions(prevSessions => 
           prevSessions.map(s => {
@@ -119,7 +112,6 @@ export default function AdminSessions() {
       }
     };
 
-    // Listen for challenge session ended
     const handleChallengeSessionEnded = (data: any) => {
       setSessions(prevSessions => 
         prevSessions.map(s => {
@@ -134,7 +126,6 @@ export default function AdminSessions() {
       );
     };
 
-    // Listen for session ended event
     const handleSessionEnded = (data: any) => {
       setSessions(prevSessions => 
         prevSessions.map(s => {
@@ -151,7 +142,6 @@ export default function AdminSessions() {
           return s;
         })
       );
-      // Refresh to get updated data
       setTimeout(() => {
         loadSessions();
       }, 500);
@@ -161,7 +151,6 @@ export default function AdminSessions() {
       });
     };
 
-    // Listen for winner selection updates
     const handleWinnerSelected = (data: any) => {
       setSessions(prevSessions => 
         prevSessions.map(s => {
@@ -205,7 +194,6 @@ export default function AdminSessions() {
   const loadSessions = async () => {
     try {
       const activeSessions = await sessionsAPI.getActive();
-      // Convert date strings to Date objects
       const processed = activeSessions.map((s: any) => ({
         ...s,
         startTime: new Date(s.startTime),
@@ -303,14 +291,11 @@ export default function AdminSessions() {
   };
 
   const getElapsedTime = (session: any) => {
-    // Use WebSocket timer data if available for real-time sync
     if (timerData[session.id]) {
-      return Math.floor(timerData[session.id].elapsed / 60); // Convert seconds to minutes
+      return Math.floor(timerData[session.id].elapsed / 60);
     }
 
-    // Fallback to local calculation
     if (session.status === 'paused' && session.currentPauseStart) {
-      // Calculate time until pause
       const pauseStart = new Date(session.currentPauseStart).getTime();
       const elapsedUntilPause = pauseStart - new Date(session.startTime).getTime();
       return Math.floor(elapsedUntilPause / (1000 * 60));
@@ -323,12 +308,10 @@ export default function AdminSessions() {
   };
 
   const getRemainingTime = (session: any) => {
-    // Use WebSocket timer data if available for real-time sync
     if (timerData[session.id]) {
-      return Math.floor(timerData[session.id].remaining / 60); // Convert seconds to minutes
+      return Math.floor(timerData[session.id].remaining / 60);
     }
 
-    // Fallback to local calculation
     if (session.status === 'paused') {
       const end = new Date(session.endTime).getTime();
       const start = new Date(session.startTime).getTime();
