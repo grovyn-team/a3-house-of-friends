@@ -11,9 +11,9 @@
 2. **Configure the Service:**
    - **Name:** `a3-house-backend`
    - **Environment:** `Node`
-   - **Build Command:** `npm install --include=dev && npm run build`
-   - **Start Command:** `npm start`
-   - **Root Directory:** `backend` (important: set this if deploying from monorepo root)
+   - **Build Command:** `cd backend && npm install && npm run build`
+   - **Start Command:** `cd backend && npm start`
+   - **Root Directory:** Leave empty (build command handles the directory change)
 
 3. **Set Environment Variables in Render Dashboard:**
    ```
