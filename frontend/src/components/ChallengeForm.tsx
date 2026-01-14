@@ -116,7 +116,7 @@ export function ChallengeForm({ open, onOpenChange, onSubmit, loading }: Challen
   };
 
   // Responsive width, always centered - use same format as default DialogContent
-  const contentClass = "glass-ios border-primary/30 w-[95vw] md:w-full max-w-md md:max-w-2xl max-h-[90vh] overflow-y-auto p-4 !left-[50%] !top-[50%] !translate-x-[-50%] !translate-y-[-50%]";
+  const contentClass = "glass-ios border-primary/30 w-[95vw] md:w-full max-w-md md:max-w-2xl max-h-[90vh] overflow-y-auto p-4";
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
