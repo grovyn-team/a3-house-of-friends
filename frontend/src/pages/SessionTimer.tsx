@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Clock, Plus, ShoppingCart, Receipt, LogOut, Pause, Play, Users } from 'lucide-react';
+import { Clock, Plus, ShoppingCart, Receipt, LogOut, Pause, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { sessionsAPI } from '@/lib/api';
@@ -10,8 +10,6 @@ import { formatDuration } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { useTimer } from '@/hooks/useTimer';
 import { useWebSocket } from '@/hooks/useWebSocket';
-import { PauseSessionDialog } from '@/components/PauseSessionDialog';
-import { ResumeSessionDialog } from '@/components/ResumeSessionDialog';
 import { WinnerSelectionDialog } from '@/components/WinnerSelectionDialog';
 import { useConfirmation } from '@/components/ui/confirmation-dialog';
 
@@ -23,10 +21,6 @@ export default function SessionTimer() {
   const [session, setSession] = useState<Session | null>(null);
   const [isExtended, setIsExtended] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [pauseDialogOpen, setPauseDialogOpen] = useState(false);
-  const [resumeDialogOpen, setResumeDialogOpen] = useState(false);
-  const [isPausing, setIsPausing] = useState(false);
-  const [isResuming, setIsResuming] = useState(false);
   const [winnerDialogOpen, setWinnerDialogOpen] = useState(false);
 
   const isPaused = session?.status === 'paused' || !!session?.currentPauseStart;
@@ -406,58 +400,6 @@ export default function SessionTimer() {
     });
   };
 
-  const handlePause = async (reason?: string) => {
-    if (!session) return;
-    setIsPausing(true);
-    try {
-      const updated = await sessionsAPI.pause(session.id, reason, 'customer');
-      setSession(prev => prev ? {
-        ...prev,
-        status: 'paused',
-        currentPauseStart: updated.currentPauseStart ? new Date(updated.currentPauseStart) : undefined,
-        pauseHistory: updated.pauseHistory || prev.pauseHistory || [],
-      } : null);
-    } catch (error: any) {
-      toast({
-        title: 'Error',
-        description: error.message || 'Failed to pause session',
-        variant: 'destructive',
-      });
-      throw error;
-    } finally {
-      setIsPausing(false);
-    }
-  };
-
-  const handleResume = async () => {
-    if (!session) return;
-    setIsResuming(true);
-    try {
-      const updated = await sessionsAPI.resume(session.id, 'customer');
-      setSession(prev => prev ? {
-        ...prev,
-        status: 'active',
-        endTime: updated.endTime ? new Date(updated.endTime) : prev.endTime,
-        currentPauseStart: undefined,
-        totalPausedDuration: updated.totalPausedDuration || prev.totalPausedDuration || 0,
-        pauseHistory: updated.pauseHistory || prev.pauseHistory || [],
-      } : null);
-      toast({
-        title: 'Session Resumed',
-        description: 'Your session has been resumed. Timer is running again.',
-      });
-    } catch (error: any) {
-      toast({
-        title: 'Error',
-        description: error.message || 'Failed to resume session',
-        variant: 'destructive',
-      });
-      throw error;
-    } finally {
-      setIsResuming(false);
-    }
-  };
-
   const pausedDuration = session?.currentPauseStart 
     ? Math.round((Date.now() - new Date(session.currentPauseStart).getTime()) / (1000 * 60))
     : 0;
@@ -545,40 +487,29 @@ export default function SessionTimer() {
 
         {/* Actions */}
         <div className="space-y-3">
-          {isPaused ? (
-            <Button
-              variant="glow"
-              size="lg"
-              className="w-full bg-success hover:bg-success/90"
-              onClick={() => setResumeDialogOpen(true)}
-              disabled={isResuming}
-            >
-              <Play className="w-4 h-4 mr-2" />
-              {isResuming ? 'Resuming...' : 'Resume Session'}
-            </Button>
-          ) : (
-            <>
-              <Button
-                variant="glow"
-                size="lg"
-                className="w-full"
-                onClick={handleExtend}
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Extend Session
-              </Button>
+          <Button
+            variant="glow"
+            size="lg"
+            className="w-full"
+            onClick={handleExtend}
+            disabled={isPaused}
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Extend Session
+          </Button>
 
-              <Button
-                variant="default"
-                size="lg"
-                className="w-full glass"
-                onClick={() => setPauseDialogOpen(true)}
-                disabled={isPausing}
-              >
-                <Pause className="w-4 h-4 mr-2" />
-                {isPausing ? 'Pausing...' : 'Pause Session'}
-              </Button>
-            </>
+          {isPaused && (
+            <div className="glass rounded-2xl p-4 border border-warning/30">
+              <div className="flex items-start gap-2">
+                <Pause className="w-4 h-4 text-warning mt-0.5" />
+                <div className="text-sm">
+                  <p className="font-medium text-foreground">Session is paused</p>
+                  <p className="text-muted-foreground mt-1">
+                    Please contact the staff/admin to resume your session.
+                  </p>
+                </div>
+              </div>
+            </div>
           )}
 
           <Button
@@ -628,22 +559,6 @@ export default function SessionTimer() {
           )}
         </div>
       </div>
-
-      {/* Dialogs - Mobile variant for user */}
-      <PauseSessionDialog
-        open={pauseDialogOpen}
-        onOpenChange={setPauseDialogOpen}
-        onPause={handlePause}
-        variant="mobile"
-      />
-      <ResumeSessionDialog
-        open={resumeDialogOpen}
-        onOpenChange={setResumeDialogOpen}
-        onResume={handleResume}
-        pausedDuration={pausedDuration}
-        loading={isResuming}
-        variant="mobile"
-      />
       
       {/* Winner Selection Dialog for Challenge Sessions */}
       {session?.isChallengeSession && session.challengeData && (

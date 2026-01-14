@@ -16,9 +16,9 @@
     --popover: 0 0% 100%;
     --popover-foreground: 240 30% 10%;
 
-    /* Neon Cyan Primary - Gaming Zone Vibe */
-    --primary: 180 100% 50%;
-    --primary-foreground: 240 30% 10%;
+    /* Primary (light mode) - improved contrast */
+    --primary: 185 100% 32%;
+    --primary-foreground: 0 0% 100%;
 
     /* Electric Purple Accent - Arcade Feel */
     --accent: 280 90% 65%;
@@ -29,7 +29,7 @@
     --secondary-foreground: 0 0% 100%;
 
     --muted: 240 15% 92%;
-    --muted-foreground: 240 10% 45%;
+    --muted-foreground: 240 10% 35%;
 
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
@@ -42,15 +42,15 @@
     --warning: 45 100% 55%;
     --warning-foreground: 240 30% 10%;
 
-    --border: 240 20% 85%;
-    --input: 240 20% 90%;
+    --border: 240 15% 80%;
+    --input: 240 15% 88%;
     --ring: 180 100% 50%;
 
     --radius: 1rem;
 
     /* Custom gaming colors */
-    --glow: 180 100% 50%;
-    --neon-cyan: 180 100% 50%;
+    --glow: 185 100% 32%;
+    --neon-cyan: 185 100% 32%;
     --neon-purple: 280 90% 65%;
     --neon-pink: 330 90% 65%;
 

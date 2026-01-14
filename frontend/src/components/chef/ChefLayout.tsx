@@ -42,7 +42,7 @@ export function ChefLayout({ children }: ChefLayoutProps) {
 
   const handleLogout = () => {
     localStorage.removeItem('authToken');
-    window.location.href = "/admin/login";
+    window.location.href = "/chef/login";
   };
 
   return (

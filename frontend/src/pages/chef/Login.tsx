@@ -6,9 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { authAPI } from "@/lib/api";
-import { Lock, User } from "lucide-react";
+import { Lock, User, ChefHat } from "lucide-react";
 
-export default function AdminLogin() {
+export default function ChefLogin() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [username, setUsername] = useState("");
@@ -32,11 +32,11 @@ export default function AdminLogin() {
     try {
       const response = await authAPI.login(username, password);
       
-      if (!['admin', 'staff', 'chef'].includes(response.user.role)) {
+      if (response.user.role !== 'chef') {
         authAPI.logout();
         toast({
           title: "Access Denied",
-          description: "You don't have permission to access this area.",
+          description: "This login is for chefs only. Please use the admin login.",
           variant: "destructive",
         });
         setIsLoading(false);
@@ -48,11 +48,7 @@ export default function AdminLogin() {
         description: `Login successful.`,
       });
 
-      if (response.user.role === 'chef') {
-        navigate("/chef/orders");
-      } else {
-        navigate("/admin");
-      }
+      navigate("/chef/orders");
     } catch (error: any) {
       toast({
         title: "Login Failed",
@@ -72,16 +68,17 @@ export default function AdminLogin() {
         className="w-full max-w-sm"
       >
         <div className="glass-strong rounded-3xl p-6 md:p-8">
-          {/* Header */}
           <div className="text-center mb-6">
             <Logo size="md" className="justify-center mb-4" />
-            <h1 className="text-xl font-bold text-foreground">Admin Login</h1>
+            <div className="flex items-center justify-center gap-2 mb-2">
+              <ChefHat className="w-6 h-6 text-orange-500" />
+              <h1 className="text-xl font-bold text-foreground">Chef Login</h1>
+            </div>
             <p className="text-muted-foreground text-sm mt-1">
-              Sign in to manage your cafe
+              Sign in to manage orders and inventory
             </p>
           </div>
 
-          {/* Form */}
           <form onSubmit={handleLogin} className="space-y-4">
             <div className="space-y-2">
               <label className="text-sm font-medium text-foreground">Username</label>
@@ -121,6 +118,18 @@ export default function AdminLogin() {
               {isLoading ? "Signing in..." : "Sign In"}
             </Button>
           </form>
+
+          <div className="mt-6 text-center">
+            <p className="text-sm text-muted-foreground">
+              Admin?{" "}
+              <Link
+                to="/admin/login"
+                className="text-primary hover:underline font-medium"
+              >
+                Admin Login
+              </Link>
+            </p>
+          </div>
 
           <p className="text-center text-xs text-muted-foreground mt-4">
             Protected area. Authorized personnel only.

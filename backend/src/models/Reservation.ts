@@ -2,7 +2,7 @@ import mongoose, { Schema, Document } from 'mongoose';
 
 export interface IReservation extends Document {
   activityId: mongoose.Types.ObjectId;
-  unitId: mongoose.Types.ObjectId;
+  unitId?: mongoose.Types.ObjectId | null;
   startTime: Date;
   endTime: Date;
   durationMinutes: number;
@@ -33,7 +33,8 @@ const ReservationSchema = new Schema<IReservation>(
     unitId: {
       type: Schema.Types.ObjectId,
       ref: 'ActivityUnit',
-      required: true,
+      required: false,
+      default: null,
     },
     startTime: {
       type: Date,

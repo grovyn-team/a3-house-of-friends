@@ -15,7 +15,8 @@ import {
   ShoppingCart, 
   Gamepad2, 
   Package,
-  TrendingUp
+  TrendingUp,
+  UserPlus
 } from "lucide-react";
 import { useState, useEffect } from "react";
 
@@ -80,6 +81,12 @@ export function AdminLayout({ children }: AdminLayoutProps) {
             </div>
 
             <div className="hidden md:flex items-center gap-2">
+              <Button variant="outline" asChild>
+                <Link to="/admin/register">
+                  <UserPlus className="h-4 w-4 mr-2" />
+                  Create Account
+                </Link>
+              </Button>
               <Button variant="ghost" onClick={handleLogout}>
                 <LogOut className="h-4 w-4" />
                 Logout
@@ -128,6 +135,12 @@ export function AdminLayout({ children }: AdminLayoutProps) {
                 <StatsCard label="Revenue" value={`₹${stats.todayRevenue.toLocaleString()}`} />
                 <StatsCard label="Served" value={stats.servedToday} />
               </div>
+              <Button variant="outline" className="w-full" asChild>
+                <Link to="/admin/register">
+                  <UserPlus className="h-4 w-4 mr-2" />
+                  Create Account
+                </Link>
+              </Button>
               <Button variant="outline" className="w-full" onClick={handleLogout}>
                 <LogOut className="h-4 w-4" />
                 Logout

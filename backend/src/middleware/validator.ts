@@ -76,3 +76,33 @@ export const createOrderSchema = z.object({
   }),
 });
 
+export const joinQueueSchema = z.object({
+  body: z.object({
+    activityId: z.string().min(1, 'Activity ID is required'),
+    duration: z.number().int().min(1, 'Duration must be at least 1 minute'),
+    customerName: z.string().min(1, 'Customer name is required'),
+    customerPhone: z.string().regex(/^\d{10}$/, 'Phone must be 10 digits'),
+    qrContext: z.object({
+      branchId: z.string().optional(),
+      zoneId: z.string().optional(),
+      tableId: z.string().optional(),
+    }).optional(),
+    paymentId: z.string().optional(),
+    paymentStatus: z.enum(['paid', 'offline']).optional(),
+  }),
+});
+
+export const exitQueueSchema = z.object({
+  body: z.object({
+    reservationId: z.string().min(1, 'Reservation ID is required'),
+  }),
+});
+
+export const confirmReservationSchema = z.object({
+  body: z.object({
+    reservationId: z.string().min(1, 'Reservation ID is required'),
+    paymentId: z.string().min(1, 'Payment ID is required'),
+    unitId: z.string().optional(),
+  }),
+});
+

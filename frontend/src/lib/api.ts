@@ -13,10 +13,15 @@ async function apiRequest<T>(
     ...options.headers,
   };
 
-  const response = await fetch(url, {
-    ...options,
-    headers,
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...options,
+      headers,
+    });
+  } catch (e: any) {
+    throw new Error(`Network error. Please check your connection and try again.`);
+  }
 
   if (!response.ok) {
     let errorMessage = `HTTP error! status: ${response.status}`;
@@ -26,11 +31,16 @@ async function apiRequest<T>(
     } catch {
       errorMessage = response.statusText || errorMessage;
     }
-    
-    if (response.status === 404) {
-      errorMessage = `Backend server not found. Make sure the backend is running at ${API_BASE_URL}.`;
+
+    if (response.status === 401) {
+      localStorage.removeItem('authToken');
+      throw new Error(errorMessage || 'Unauthorized. Please sign in again.');
     }
-    
+
+    if (response.status === 403) {
+      throw new Error(errorMessage || 'Forbidden. You do not have permission to perform this action.');
+    }
+
     throw new Error(errorMessage);
   }
 

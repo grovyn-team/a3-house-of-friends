@@ -24,7 +24,7 @@ router.post('/reject', authenticate, requireStaff, rejectCashPayment);
 
 router.get('/waiting', authenticate, requireStaff, getWaitingQueue);
 router.post('/process', authenticate, requireStaff, processQueue);
-router.get('/status/:reservationId', authenticate, getQueueStatusByReservation);
+router.get('/status/:reservationId', getQueueStatusByReservation);
 
 export default router;
 
