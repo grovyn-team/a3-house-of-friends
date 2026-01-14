@@ -32,11 +32,11 @@ export default function ChefLogin() {
     try {
       const response = await authAPI.login(username, password);
       
-      if (!['chef', 'admin'].includes(response.user.role)) {
+      if (!['chef', 'admin', 'staff'].includes(response.user.role)) {
         authAPI.logout();
         toast({
           title: "Access Denied",
-          description: "This login is for chefs and admins only. Staff members should use the admin login.",
+          description: "You don't have permission to access this area.",
           variant: "destructive",
         });
         setIsLoading(false);

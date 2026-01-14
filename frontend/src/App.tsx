@@ -83,7 +83,7 @@ const AppContent = () => {
         <Route 
           path="/chef/orders" 
           element={
-            <ProtectedRoute allowedRoles={['chef', 'admin']} redirectTo="/chef/login">
+            <ProtectedRoute allowedRoles={['chef', 'admin', 'staff']} redirectTo="/chef/login">
               <ChefOrders />
             </ProtectedRoute>
           } 
@@ -91,7 +91,7 @@ const AppContent = () => {
         <Route 
           path="/chef/inventory" 
           element={
-            <ProtectedRoute allowedRoles={['chef', 'admin']} redirectTo="/chef/login">
+            <ProtectedRoute allowedRoles={['chef', 'admin', 'staff']} redirectTo="/chef/login">
               <ChefInventory />
             </ProtectedRoute>
           } 
