@@ -82,7 +82,6 @@ export default function ApprovalsAndQueue() {
 
   const handleReject = async (reservationId: string) => {
     try {
-      setRejectingId(reservationId);
       await queueAPI.rejectCashPayment(reservationId);
       toast({
         title: "Success",
@@ -318,7 +317,15 @@ export default function ApprovalsAndQueue() {
         </Card>
 
         {/* Reject Confirmation Dialog */}
-        <AlertDialog open={!!rejectingId} onOpenChange={(open) => !open && setRejectingId(null)}>
+        <AlertDialog 
+          open={!!rejectingId} 
+          onOpenChange={(open) => {
+            // Only close if explicitly closing, prevent flickering
+            if (!open && rejectingId) {
+              setRejectingId(null);
+            }
+          }}
+        >
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Reject Payment?</AlertDialogTitle>
@@ -327,9 +334,13 @@ export default function ApprovalsAndQueue() {
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogCancel onClick={() => setRejectingId(null)}>Cancel</AlertDialogCancel>
               <AlertDialogAction
-                onClick={() => rejectingId && handleReject(rejectingId)}
+                onClick={() => {
+                  if (rejectingId) {
+                    handleReject(rejectingId);
+                  }
+                }}
                 className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               >
                 Reject

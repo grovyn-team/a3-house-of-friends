@@ -44,7 +44,7 @@ export function PauseSessionDialog({ open, onOpenChange, onPause, variant = 'mob
   // Mobile: bottom sheet style, Admin: centered modal
   const contentClass = variant === 'mobile'
     ? "glass-ios border-primary/30 max-w-md rounded-2xl [&>button]:hidden !left-1/2 !-translate-x-1/2 !top-auto !bottom-0 !translate-y-0 p-4 data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom"
-    : "glass-ios border-primary/30 max-w-lg !left-[50%] !top-[50%] !-translate-x-[50%] !-translate-y-[50%] p-4";
+    : "glass-ios border-primary/30 max-w-lg p-4";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
