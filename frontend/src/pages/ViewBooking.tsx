@@ -309,17 +309,28 @@ export default function ViewBooking() {
                   </div>
 
                   {/* Actions */}
-                  {type === 'session' && booking.status === 'active' && (
-                    <Button
-                      variant="glow"
-                      className="w-full"
-                      onClick={() => {
-                        sessionStorage.setItem('currentSession', JSON.stringify(booking));
-                        navigate('/session', { state: { session: booking } });
-                      }}
-                    >
-                      View Live Timer
-                    </Button>
+                  {type === 'session' && (booking.status === 'active' || booking.status === 'payment_confirmed' || booking.status === 'confirmed' || booking.status === 'approved') && (
+                    <div className="flex gap-2">
+                      <Button
+                        variant="glow"
+                        className="flex-1"
+                        onClick={() => {
+                          sessionStorage.setItem('currentSession', JSON.stringify(booking));
+                          navigate('/session', { state: { session: booking } });
+                        }}
+                      >
+                        Go to Session
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="flex-1"
+                        onClick={() => {
+                          navigate('/my-bookings');
+                        }}
+                      >
+                        Back to Bookings
+                      </Button>
+                    </div>
                   )}
 
                   {type === 'order' && (

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { motion } from "framer-motion";
 import { AdminLayout } from "@/components/admin/AdminLayout";
 import { QueueItemCard } from "@/components/admin/QueueItemCard";
@@ -42,6 +42,7 @@ export default function AdminQueue() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const authToken = localStorage.getItem('authToken');
+  const isRemovingRef = useRef<Set<string>>(new Set());
   const { on, isConnected } = useWebSocket({ 
     namespace: 'admin',
     authToken: authToken || undefined,
@@ -71,32 +72,46 @@ export default function AdminQueue() {
     loadQueue();
   }, [loadQueue]);
 
+  const isLoadingQueueRef = useRef(false);
+  
+  const loadQueueSafe = useCallback(async () => {
+    if (isLoadingQueueRef.current) return;
+    isLoadingQueueRef.current = true;
+    try {
+      await loadQueue();
+    } finally {
+      setTimeout(() => {
+        isLoadingQueueRef.current = false;
+      }, 500);
+    }
+  }, [loadQueue]);
+
   // Listen for real-time updates
   useEffect(() => {
     if (!isConnected) return;
 
     const cleanupBooking = on('booking_created', () => {
-      loadQueue();
+      loadQueueSafe();
     });
 
     const cleanupOrder = on('order_created', () => {
-      loadQueue();
+      loadQueueSafe();
     });
 
     const cleanupPayment = on('payment_completed', () => {
-      loadQueue();
+      loadQueueSafe();
     });
 
     const cleanupQueueUpdate = on('queue_updated', () => {
-      loadQueue();
+      loadQueueSafe();
     });
 
     const cleanupPendingApproval = on('pending_approval', () => {
-      loadQueue();
+      loadQueueSafe();
     });
 
     const cleanupApprovalProcessed = on('approval_processed', () => {
-      loadQueue();
+      loadQueueSafe();
     });
 
     return () => {
@@ -107,7 +122,7 @@ export default function AdminQueue() {
       cleanupPendingApproval();
       cleanupApprovalProcessed();
     };
-  }, [isConnected, on, loadQueue]);
+  }, [isConnected, on, loadQueueSafe]);
 
   // Filter queue based on tab and service filter
   const getFilteredQueue = () => {
@@ -181,6 +196,9 @@ export default function AdminQueue() {
   };
 
   const handleRemove = async (entry: any) => {
+    const entryId = entry.id;
+    if (isRemovingRef.current.has(entryId)) return;
+    
     confirm({
       title: "Remove from Queue?",
       description: `Are you sure you want to remove ${entry.name} from the queue?`,
@@ -188,6 +206,9 @@ export default function AdminQueue() {
       confirmText: "Remove",
       cancelText: "Cancel",
       onConfirm: async () => {
+        if (isRemovingRef.current.has(entryId)) return;
+        isRemovingRef.current.add(entryId);
+        
         try {
           await queueAPI.remove(entry.id, entry.type);
           toast({
@@ -199,7 +220,6 @@ export default function AdminQueue() {
               : "Session ended.",
             variant: "destructive",
           });
-          // Reload queue to reflect changes
           loadQueue();
         } catch (error: any) {
           toast({
@@ -207,7 +227,12 @@ export default function AdminQueue() {
             description: error.message || "Could not remove from queue.",
             variant: "destructive",
           });
-          throw error; // Re-throw to prevent dialog from closing
+          isRemovingRef.current.delete(entryId);
+          throw error;
+        } finally {
+          setTimeout(() => {
+            isRemovingRef.current.delete(entryId);
+          }, 1000);
         }
       },
     });

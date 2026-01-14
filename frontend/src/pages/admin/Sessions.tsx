@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { AdminLayout } from "@/components/admin/AdminLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -38,6 +38,7 @@ export default function AdminSessions() {
   const [winnerDialogOpen, setWinnerDialogOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [timerData, setTimerData] = useState<Record<string, { elapsed: number; remaining: number }>>({});
+  const isEndingRef = useRef<Set<string>>(new Set());
 
   const { on, isConnected } = useWebSocket({ namespace: 'admin' });
 
@@ -127,6 +128,8 @@ export default function AdminSessions() {
     };
 
     const handleSessionEnded = (data: any) => {
+      if (isEndingRef.current.has(data.session_id)) return;
+      
       setSessions(prevSessions => 
         prevSessions.map(s => {
           if (s.id === data.session_id) {
@@ -261,6 +264,8 @@ export default function AdminSessions() {
   };
 
   const handleEndSession = async (sessionId: string) => {
+    if (isEndingRef.current.has(sessionId)) return;
+    
     confirm({
       title: "End Session?",
       description: "Are you sure you want to end this session? This action cannot be undone.",
@@ -268,7 +273,10 @@ export default function AdminSessions() {
       confirmText: "End Session",
       cancelText: "Cancel",
       onConfirm: async () => {
+        if (isEndingRef.current.has(sessionId)) return;
+        isEndingRef.current.add(sessionId);
         setActionLoading(sessionId);
+        
         try {
           await sessionsAPI.end(sessionId);
           toast({
@@ -282,9 +290,13 @@ export default function AdminSessions() {
             description: error.message || "Failed to end session.",
             variant: "destructive",
           });
+          isEndingRef.current.delete(sessionId);
           throw error;
         } finally {
           setActionLoading(null);
+          setTimeout(() => {
+            isEndingRef.current.delete(sessionId);
+          }, 1000);
         }
       },
     });

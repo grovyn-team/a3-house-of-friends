@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Clock, Plus, ShoppingCart, Receipt, LogOut, Pause, Users } from 'lucide-react';
@@ -22,6 +22,7 @@ export default function SessionTimer() {
   const [isExtended, setIsExtended] = useState(false);
   const [loading, setLoading] = useState(true);
   const [winnerDialogOpen, setWinnerDialogOpen] = useState(false);
+  const isEndingRef = useRef(false);
 
   const isPaused = session?.status === 'paused' || !!session?.currentPauseStart;
 
@@ -214,13 +215,17 @@ export default function SessionTimer() {
     };
 
     const handleQueueRemoved = (data: any) => {
-      if (data.type === 'session' && data.sessionId === session.id) {
-        handleSessionEnd();
+      if (data.type === 'session' && data.sessionId === session.id && !isEndingRef.current) {
+        isEndingRef.current = true;
+        sessionStorage.removeItem('currentSession');
         toast({
           title: 'Session Ended',
           description: data.message || 'Your session has been ended by admin.',
           variant: 'destructive',
         });
+        setTimeout(() => {
+          handleSessionEnd();
+        }, 1000);
       }
     };
 
@@ -237,7 +242,8 @@ export default function SessionTimer() {
     };
 
     const handleSessionEnded = (data: any) => {
-      if (data.session_id === session.id) {
+      if (data.session_id === session.id && !isEndingRef.current) {
+        isEndingRef.current = true;
         sessionStorage.removeItem('currentSession');
         
         setSession(prev => prev ? {
@@ -338,6 +344,9 @@ export default function SessionTimer() {
   }, [isConnected, session, on, toast]);
 
   const handleSessionEnd = async () => {
+    if (isEndingRef.current) return;
+    isEndingRef.current = true;
+    
     if (session) {
       try {
         await sessionsAPI.end(session.id);
@@ -345,10 +354,6 @@ export default function SessionTimer() {
         console.error('Error ending session:', error);
       }
     }
-    toast({
-      title: 'Session Ended',
-      description: 'Your session time has expired.',
-    });
     sessionStorage.removeItem('currentSession');
     navigate('/');
   };
@@ -375,6 +380,8 @@ export default function SessionTimer() {
   };
 
   const handleEndSession = async () => {
+    if (isEndingRef.current) return;
+    
     confirm({
       title: "End Session Early?",
       description: "Are you sure you want to end your session early? This action cannot be undone.",
@@ -382,11 +389,15 @@ export default function SessionTimer() {
       confirmText: "End Session",
       cancelText: "Cancel",
       onConfirm: async () => {
+        if (isEndingRef.current) return;
+        isEndingRef.current = true;
+        
         if (session) {
           try {
             await sessionsAPI.end(session.id);
           } catch (error) {
             console.error('Error ending session:', error);
+            isEndingRef.current = false;
             throw error;
           }
         }

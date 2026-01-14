@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { ChefLayout } from "@/components/chef/ChefLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,7 @@ export default function ChefOrders() {
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState<Set<string>>(new Set());
   const authToken = localStorage.getItem('authToken');
+  const isLoadingRef = useRef(false);
   
   const { on, isConnected } = useWebSocket({ 
     namespace: 'admin',
@@ -30,6 +31,9 @@ export default function ChefOrders() {
   });
 
   const loadOrders = async () => {
+    if (isLoadingRef.current) return;
+    isLoadingRef.current = true;
+    
     try {
       setLoading(true);
       const data = await ordersAPI.getPendingOrders();
@@ -43,6 +47,7 @@ export default function ChefOrders() {
       });
     } finally {
       setLoading(false);
+      isLoadingRef.current = false;
     }
   };
 
@@ -54,11 +59,15 @@ export default function ChefOrders() {
     if (!isConnected) return;
 
     const cleanupOrder = on('order_created', () => {
-      loadOrders();
+      if (!isLoadingRef.current) {
+        loadOrders();
+      }
     });
 
     const cleanupStatus = on('queue_updated', () => {
-      loadOrders();
+      if (!isLoadingRef.current) {
+        loadOrders();
+      }
     });
 
     return () => {

@@ -59,7 +59,7 @@ export default function MyBookings() {
       }
     });
 
-    const cleanupBookingApproved = on('booking_approved', (data: any) => {
+    const cleanupBookingApproved = on('booking_approved', async (data: any) => {
       const booking = history.find(h => 
         h.id === data.reservationId || 
         h.reservationId === data.reservationId
@@ -69,6 +69,17 @@ export default function MyBookings() {
           status: 'payment_confirmed',
           ...(data.sessionId && { sessionId: data.sessionId })
         });
+        
+        if (data.sessionId) {
+          try {
+            const { sessionsAPI } = await import('../lib/api');
+            const sessionData = await sessionsAPI.getById(data.sessionId);
+            sessionStorage.setItem('currentSession', JSON.stringify(sessionData));
+          } catch (error) {
+            console.error('Error loading session for localStorage:', error);
+          }
+        }
+        
         loadBookings();
         toast({
           title: 'Booking Approved!',
@@ -78,7 +89,7 @@ export default function MyBookings() {
       }
     });
 
-    const cleanupBooking = on('booking_status_update', (data: any) => {
+    const cleanupBooking = on('booking_status_update', async (data: any) => {
       const booking = history.find(h => 
         h.id === data.reservationId || 
         h.sessionId === data.sessionId ||
@@ -90,6 +101,17 @@ export default function MyBookings() {
           status: data.status === 'confirmed' ? 'payment_confirmed' : data.status,
           ...(data.sessionId && { sessionId: data.sessionId })
         });
+        
+        if (data.sessionId && (data.status === 'confirmed' || data.status === 'payment_confirmed' || data.status === 'active')) {
+          try {
+            const { sessionsAPI } = await import('../lib/api');
+            const sessionData = await sessionsAPI.getById(data.sessionId);
+            sessionStorage.setItem('currentSession', JSON.stringify(sessionData));
+          } catch (error) {
+            console.error('Error loading session for localStorage:', error);
+          }
+        }
+        
         loadBookings();
         toast({
           title: data.status === 'confirmed' || data.status === 'payment_confirmed' ? 'Booking Confirmed!' : 'Booking Updated',
@@ -446,16 +468,35 @@ export default function MyBookings() {
                           </p>
                         </div>
                       </div>
-                      <Button
-                        variant="outline"
-                        className="w-full mt-4"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleViewDetails(booking);
-                        }}
-                      >
-                        View Details
-                      </Button>
+                      <div className="flex gap-2 mt-4">
+                        {(getDisplayStatus(booking) === 'active' || getDisplayStatus(booking) === 'payment_confirmed' || getDisplayStatus(booking) === 'confirmed' || getDisplayStatus(booking) === 'approved') && (booking.sessionId || booking.details?.id) && (
+                          <Button
+                            variant="glow"
+                            className="flex-1"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const sessionData = booking.details || booking;
+                              const sessionId = booking.sessionId || booking.details?.id || booking.id;
+                              if (sessionId) {
+                                sessionStorage.setItem('currentSession', JSON.stringify(sessionData));
+                                navigate('/session', { state: { session: sessionData } });
+                              }
+                            }}
+                          >
+                            Go to Session
+                          </Button>
+                        )}
+                        <Button
+                          variant="outline"
+                          className={(getDisplayStatus(booking) === 'active' || getDisplayStatus(booking) === 'payment_confirmed' || getDisplayStatus(booking) === 'confirmed' || getDisplayStatus(booking) === 'approved') && (booking.sessionId || booking.details?.id) ? "flex-1" : "w-full"}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleViewDetails(booking);
+                          }}
+                        >
+                          View Details
+                        </Button>
+                      </div>
                     </CardContent>
                   </Card>
                 </motion.div>
